@@ -1,21 +1,41 @@
 # ESP32-S3 车轮动平衡仪
 
-0.6.7 单平面动平衡原型。通过轮上的白标获取转速和相位，用 MPU6050 的振动数据比较原轮、试重和校正后状态。手机直连设备热点，可看三轴波形、同速 1× 振动对比和相对白标的贴块位置。会话报告支持 JSON，原始记录支持 CSV。
+0.6.7 单平面动平衡原型，面向自行车、电动车和摩托车的装车测量。自行车车轮架空后可手拨滑行。系统以光电白标作为每圈的角度基准，从 MPU6050 采集的振动数据中提取与车轮转动同频的 1× 分量，并在原轮和试重记录之间匹配相近的转速，减小手拨力度和起始转速不同对比较的影响。单平面影响系数法用于估算校正质量和相对白标的贴装角度。手机直连设备热点，可查看三轴波形、配重位置与同速复测对比，并导出 CSV 原始数据和 JSON 测量报告。
 
-***本项目是一套支持装车测量的自行车，电动车，摩托车车轮单平面动平衡仪。车轮架空后即可手拨，空转测量，减少拆装车轮和依靠经验反复试贴配重的操作。
-系统以光电白标作为每圈的角度基准，从松手后的自然滑行记录中筛选有效数据，并按实际转速匹配原轮与试重记录。即使两次转动的力度和起始转速不同，只要有足够的共同转速数据，就能比较同速下的振动幅值和相位变化。
-系统通过单平面影响系数法估算校正所需的克数与相对白标的贴装角度，并在手机页面上用圆盘图标出位置。贴块后可在共同转速范围内复测，直观看到校正前后的振动变化。
+## 配重界面与装车试测
 
-目前测试对象涵盖数百到数万的自行车，都有比较好的效果，感兴趣的话可以参考一下。后续将加入更多电动车，摩托车的测量数据，优化算法。从初始的0.1版本到目前0.6.7，制作不易！恳请大家多多留言发表意见！
+<img width="350" alt="手机配重位置图，合成演示，约 4.0 g、相对白标顺时针 120°" src="docs/images/placement-demo.png" />
 
-<img width="1080" height="1920" alt="12e146658cf4015bb8720b7b47b8d8af" src="https://github.com/user-attachments/assets/c428e531-c881-4327-bc98-3da2cbd79802" /><img width="2276" height="1280" alt="1cc7cb42087e455193bdf794764fa773" src="https://github.com/user-attachments/assets/ce0baaa5-3f3b-41e3-ad45-43975899e4dc" />
-<img width="5712" height="3213" alt="831779fd9783670d1112c6375b3567ee" src="https://github.com/user-attachments/assets/579dde4e-ca3c-4cc1-bb65-f790d3b5db20" />
+*配重位置界面。图中克数和角度为合成演示数据。*
 
+<img width="760" alt="自行车后轮架空，车轮上的白标和车架上的传感器模块可见" src="https://github.com/user-attachments/assets/ce0baaa5-3f3b-41e3-ad45-43975899e4dc" />
 
-<img width="2275" height="1279" alt="c0606c3d52fc0d941029b9b64c55a6f9" src="https://github.com/user-attachments/assets/908177d0-1d81-45f0-b4a6-8dbe59f4be8e" />
-<img width="2276" height="1280" alt="0fba63788e1c64c6ed0bdca59fed8a3c" src="https://github.com/user-attachments/assets/7b165a7b-076b-47fd-a41d-3fe869834490" />
+*自行车后轮装车试测。白标用于光电定相，传感器固定在靠近后轮的车架上。*
 
+<details>
+<summary>查看更多试测照片</summary>
 
+<img width="330" alt="面包板上的采集电路和传感器模块" src="https://github.com/user-attachments/assets/c428e531-c881-4327-bc98-3da2cbd79802" />
+
+*面包板调试阶段的采集电路。*
+
+<img width="700" alt="自行车装车试测照片" src="https://github.com/user-attachments/assets/579dde4e-ca3c-4cc1-bb65-f790d3b5db20" />
+
+*自行车装车试测记录。*
+
+<img width="700" alt="试测现场的自行车和维修架" src="https://github.com/user-attachments/assets/908177d0-1d81-45f0-b4a6-8dbe59f4be8e" />
+
+*试测现场的自行车和维修架。*
+
+<img width="700" alt="后轮一侧的传感器固定和走线" src="https://github.com/user-attachments/assets/7b165a7b-076b-47fd-a41d-3fe869834490" />
+
+*后轮一侧的传感器固定与走线。*
+
+</details>
+
+## 试测进度
+
+目前已在多台自行车上进行装车试测，正在进一步验证不同轮组的配重计算重复性。后续将补充电动车和摩托车的测量与复测数据。
 
 ## 接线
 
@@ -41,7 +61,13 @@ idf.py build
 idf.py -p PORT flash monitor
 ~~~
 
-把 PORT 替换为开发板的串口。烧录后手机连接设备热点，打开 http://192.168.4.1。依次测量原轮和已知试重，按页面图示查看相对白标的角度，再做校正后复测。输入的试重和校正半径为轮轴中心到贴块中心的距离，单位 mm。
+把 PORT 替换为开发板的串口。烧录后手机连接设备热点，打开 http://192.168.4.1。
+
+### 测量流程
+
+**原轮测量 → 加已知试重并测量 → 车轮停稳后取下试重 → 按图贴校正块 → 同速复测**
+
+试重半径与校正半径都从轮轴中心量到对应配重块的中心，单位 mm。
 
 试重仅用于车轮可靠架空、贴块牢靠的受控低速测试。固件会在数据不足或候选配重分歧时保留结果报告。实轮克数重复性和配重精度仍待验证。
 
@@ -61,3 +87,7 @@ python tests/product_session/test_window_end_to_end.py
 ## 外壳
 
 hardware 目录含 TCRT5000 和 MPU6050 的 OpenSCAD 外壳模型。打印前按实际模块尺寸检查装配。
+
+## 版本与交流
+
+项目从 0.1 迭代到 0.6.7。欢迎在 [Issues](https://github.com/993752488-maker/wheel-balance-esp32s3/issues) 留言，分享轮组类型、试测条件和建议。
