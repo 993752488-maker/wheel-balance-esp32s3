@@ -1,0 +1,24 @@
+menu "Phone diagnostic web server"
+    depends on DIAGNOSTIC_WEB_ENABLED
+
+    config DIAGNOSTIC_WEB_AP_SSID
+        string "Wi-Fi AP SSID"
+        default "WheelBalance-S3"
+        help
+            Set a name of 1 to 32 bytes for the ESP32-S3 network.
+
+    config DIAGNOSTIC_WEB_AP_PASSWORD
+        string "Wi-Fi AP password"
+        default "wheelbalance-demo"
+        help
+            Set a WPA2 passphrase of 8 to 63 bytes for this device.
+            The default is a public demonstration value.
+
+    config DIAGNOSTIC_WEB_SELFCHECK
+        bool "Enable local HTTP server self-check"
+        default y
+        help
+            Allows the application to call diagnostic_web_run_selfcheck().
+            Requests the embedded HTML and live JSON through the AP's own IP.
+            This proves local server operation, not a phone connection.
+endmenu

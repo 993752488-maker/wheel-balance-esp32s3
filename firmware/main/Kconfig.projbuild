@@ -1,0 +1,167 @@
+menu "Wheel balance V0"
+    config DIAGNOSTIC_WEB_ENABLED
+        bool "Enable offline phone diagnostic dashboard and Wi-Fi AP"
+        default n
+        help
+            Read-only live observation UI. Balancing is not implemented.
+            The independent live-analysis component can expose explicitly
+            estimated 1x/phase values; USB logging is asynchronous.
+
+    config V0_MPU_DRDY_ENABLED
+        bool "Enable optional MPU DRDY wire (not required for V0 FIFO polling)"
+        default n
+        help
+            V0 defaults to polling the sensor FIFO without using its INT pin.
+            The sensor's configured sample divider still drives FIFO writes.
+            Batch readout timestamps do not qualify sample phase accuracy.
+
+    config MPU_POSE_DIAG_ENABLED
+        bool "Experimental low-bandwidth accel/gyro register snapshot diagnostic"
+        depends on DIAGNOSTIC_WEB_ENABLED && !V0_MPU_DRDY_ENABLED
+        default n
+        help
+            MPU6050 register model only. Selects CONFIG.DLPF_CFG=6 (nominal
+            5 Hz accel/gyro) and replaces the existing direct accel check
+            with a single 14-byte accel/temperature/gyro register burst.
+            FIFO stays accel-only at 500 Hz. Snapshot cadence follows FIFO
+            batches; it is not the hardware sample rate or calibrated timing.
+            Nonblocking POSE USB records are diagnostic, never compensation.
+
+    config V0_MPU_INT_OPEN_DRAIN
+        bool "MPU INT active-low open-drain with ESP internal pull-up"
+        default n
+        help
+            INT_PIN_CFG=0xc0: active-low 50us pulses, open-drain output.
+            ESP GPIO uses a pull-up and falling-edge interrupt. Retains DRDY
+            counting. Internal pull-up is for bench evaluation; line timing
+            and final pull-up strength still require physical validation.
+
+    config MPU_TIMING_TRACE_ENABLED
+        bool "Bounded MPU data-ready GPIO-entry trace for timing investigation"
+        depends on V0_MPU_DRDY_ENABLED && !V0_DIAG_DISABLE_DRDY_ISR && !V0_DIAG_DISABLE_SENSOR_INT
+        default n
+        help
+            Stores up to 2048 ISR-entry times in internal RAM over <=3 seconds.
+            Explicit USB commands only. Does not replace FIFO sample times or
+            qualify physical phase; absent/missed IRQs are diagnostic failures.
+
+    config V0_DIAG_DISABLE_SENSOR_INT
+        bool "Diagnostic: disable sensor INT output, retain GPIO DRDY ISR"
+        default n
+        help
+            A/B experiment only: configure INT_ENABLE=0 instead of DATA_RDY.
+            FIFO, GPIO ISR registration, task priority, stack and bus settings
+            remain unchanged. No DRDY edges are expected in this experiment.
+
+    config V0_DIAG_DISABLE_DRDY_ISR
+        bool "Diagnostic: disable GPIO DRDY ISR, retain sensor INT output"
+        default n
+        help
+            A/B experiment only: normal FIFO task, stack, priority and bus
+            settings stay unchanged. GPIO interrupt capture is disabled;
+            the sensor DATA_RDY interrupt output remains configured normally.
+
+    config V0_FRAME_PROBE_ONLY
+        bool "Run bounded FIFO alignment and overflow fault injection"
+        default n
+        help
+            Static electrical bench only. Deliberately consumes partial
+            FIFO frames and lets FIFO fill, observes actual count/status,
+            and verifies rejection plus recovery. No optical or web tasks.
+            This mode must never be used for physical balancing measurements.
+
+    config V0_FIFO_PROBE_ONLY
+        bool "Run bounded direct/FIFO/direct bench experiment"
+        depends on !V0_LINK_PROBE_ONLY && !V0_FRAME_PROBE_ONLY
+        default n
+        help
+            Three 10-second windows in the main task, no DRDY ISR or optical.
+            Control windows read status/count and direct XYZ; the middle
+            window uses the normal driver FIFO API. Not a quality approval.
+
+    config V0_LINK_PROBE_BACK_TO_BACK
+        bool "Run link probe without an inter-transaction task delay"
+        depends on V0_LINK_PROBE_ONLY
+        default n
+
+    config V0_LINK_PROBE_ONLY
+        bool "Run bounded non-FIFO communication experiments instead of acquisition"
+        default n
+        help
+            Dedicated bench diagnostic only. Disables sensor FIFO/interrupts,
+            performs non-consuming WHO and direct XYZ reads at 100/50 kHz,
+            then repeats aggregate results. Does not start optical input.
+
+    config V0_OPTICAL_ENABLED
+        bool "Enable physical optical reference input (after wiring verification)"
+        default n
+        help
+            Disabled until the actual optical connector and 3.3 V logic
+            have been verified. A disconnected GPIO must not report RPM.
+
+    config V0_OPTICAL_RISING
+        bool "Mark active high (leading rising edge; otherwise active low)"
+        depends on V0_OPTICAL_ENABLED
+        default y
+
+    config V0_OPTICAL_POLL_US
+        int "V0 optical level observation period (us)"
+        range 100 1000
+        default 100
+        help
+            Periodic task-dispatched GPIO observations, no GPIO edge ISR.
+            All REF times are unqualified observations, not phase references.
+            Sampling gaps longer than the stable interval latch RPM invalid.
+
+    config V0_REF_STABLE_US
+        int "Minimum continuous mark and background level (us)"
+        range 100 100000
+        default 2000
+        help
+            Qualify a complete background-mark-background cycle. The mark
+            is reported after its trailing edge with the leading timestamp.
+            Both mark width and background gap must reach this duration;
+            narrower targets or shorter gaps can be missed. This is a bench
+            noise filter, not a qualification of phase or wheel RPM accuracy.
+
+    config V0_PULSES_PER_REV
+        int "Accepted reference pulses per revolution"
+        range 1 100
+        default 1
+
+    config V0_MIN_PULSE_INTERVAL_US
+        int "Reject pulse intervals shorter than this (us)"
+        range 100 100000
+        default 10000
+        help
+            Software rejection only, not a certified speed limit. With
+            PPR=1, 10000 us corresponds to 6000 RPM. This does not authorize
+            rotation at that speed. V0 physical tests are hand rotation only.
+
+    config V0_STOP_TIMEOUT_MS
+        int "Reference timeout (ms)"
+        range 1000 60000
+        default 10000
+        help
+            No RPM is valid after this interval without an accepted edge.
+            At PPR=1, periods >=10 seconds cannot measure below 6 RPM with
+            the default value. No reference cannot distinguish rest from
+            a missed mark or a disconnected sensor.
+
+    config RAW_CAPTURE_ENABLED
+        bool "Full-rate bounded raw window recorder in PSRAM"
+        depends on DIAGNOSTIC_WEB_ENABLED
+        default y
+        help
+            Independent zero-wait input fork, up to 60 seconds of raw FIFO
+            frames and optical references. No calibrated sample timestamps
+            or balance qualification. Failure disables only this recorder.
+
+    config V0_STREAM_ALL_SAMPLES
+        bool "Stream every acquired acceleration sample as CSV"
+        default n
+        help
+            Otherwise display the latest sample at 10 Hz; acquisition still
+            runs at 500 Hz. Streaming uses a bounded queue and counts drops.
+endmenu
+

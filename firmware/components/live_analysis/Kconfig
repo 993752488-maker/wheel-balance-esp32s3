@@ -1,0 +1,10 @@
+menu "Live vibration analysis"
+    config LIVE_ANALYSIS_ENABLED
+        bool "Enable estimated live synchronous 1x analysis"
+        depends on V0_OPTICAL_ENABLED
+        default n
+        help
+            Uses independent raw/reference queues and a bounded PSRAM window.
+            FIFO sample clock and GPIO polling reference remain unqualified;
+            all live results are estimates and cannot authorize balancing.
+endmenu

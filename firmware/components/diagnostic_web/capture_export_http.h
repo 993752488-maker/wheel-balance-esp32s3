@@ -1,0 +1,4 @@
+#pragma once
+#include "esp_http_server.h"
+/* Private HTTP adapter; console clients only use capture_export.h. */
+esp_err_t capture_export_register(httpd_handle_t server);

@@ -1,0 +1,391 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f6f3fa"><meta name="color-scheme" content="light"><title>车轮动平衡</title><link rel="stylesheet" href="/product.css?v=0.6.5"></head>
+<body>
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-wheel" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3m0 4.4v6.3m-8.5-8.5h6.3m4.4 0h6.3"/></symbol>
+  <symbol id="i-weight" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M9 8V6a3 3 0 0 1 6 0v2m-4 5h2"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-compare" viewBox="0 0 24 24"><path d="M4 4v16h16M8 8h11M8 15h6"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12h4l3-7 5 14 3-7h5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="white"/><circle cx="15" cy="12" r="2" fill="white"/><circle cx="10" cy="18" r="2" fill="white"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+</svg>
+<main class="shell">
+<header class="app-head">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-wheel"/></svg></span><h1>车轮动平衡</h1></div>
+  <div class="header-right"><span class="badge" id="sourceBadge" hidden></span><span class="badge warn" id="connectionBadge"><span class="status-dot" aria-hidden="true"></span><span id="connectionLabel">连接中</span></span></div>
+</header>
+<div class="status-banner" id="statusBanner" role="status" aria-live="polite"><span id="bannerText">正在连接设备</span></div>
+<section class="card rpm-card" aria-label="转速与采集状态">
+  <div class="rpm-reading">
+    <div class="rpm-label">车轮转速<span class="sr-only" id="rpmMode">REFERENCE RPM</span></div>
+    <div class="rpm-value"><strong id="rpmValue">—</strong><span>RPM</span></div>
+    <div class="rpm-side"><span class="ref-status" id="refStatus">等待光电参考</span><span class="sensor-line">传感器 <b id="imuState">等待连接</b></span></div>
+  </div>
+  <svg class="rpm-gauge" viewBox="0 0 160 112" aria-hidden="true">
+    <path class="rpm-track" d="M44.64 98.36a50 50 0 1 1 70.72 0" pathLength="100"/>
+    <path class="rpm-fill" id="rpmArc" d="M44.64 98.36a50 50 0 1 1 70.72 0" pathLength="100" stroke-dasharray="0 100" hidden/>
+    <circle class="rpm-ticks" cx="80" cy="63" r="38" pathLength="24"/>
+    <g id="rpmNeedle" hidden><path d="M80 66V22"/><circle cx="80" cy="63" r="5"/></g>
+    <text x="35" y="109" text-anchor="middle">0</text><text x="125" y="109" text-anchor="middle" id="rpmGaugeMax">300</text>
+  </svg>
+</section>
+<div class="product" id="productApp">
+<section class="card product-card session-focus" id="pFlowCard" aria-label="自动测量会话">
+  <div class="product-title"><h2 id="pVehicleName">本次测量</h2><span class="product-tag" id="pSource" hidden></span></div>
+  <ol class="product-stepper" aria-label="测量进度">
+    <li id="pStep0"><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-wheel"/></svg><svg class="icon step-check" aria-hidden="true"><use href="#i-check"/></svg></span><span>原轮</span></li>
+    <li id="pStep1"><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-weight"/></svg><svg class="icon step-check" aria-hidden="true"><use href="#i-check"/></svg></span><span>试重</span></li>
+    <li id="pStep2"><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-target"/></svg><svg class="icon step-check" aria-hidden="true"><use href="#i-check"/></svg></span><span>配重</span></li>
+    <li id="pStep3"><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-compare"/></svg><svg class="icon step-check" aria-hidden="true"><use href="#i-check"/></svg></span><span>复测</span></li>
+  </ol>
+  <h3 id="pHeading">等待连接设备</h3><p class="product-copy" id="pHint">连接热点后即可开始。</p>
+  <p class="product-note product-record-label" id="pRecordLabel"></p>
+  <div id="pVehiclePicker" class="product-vehicle-picker">
+    <svg class="icon" aria-hidden="true"><use href="#i-wheel"/></svg>
+    <label><span class="sr-only">测量类型</span><select id="pVehicleType"><option value="bicycle">自行车 · 手拨滑行</option><option value="electric">电动车／电摩 · 匀速</option><option value="other">其它 · 自定义</option></select><small id="pCaptureModeHint">等车轮转完</small></label>
+  </div>
+  <progress id="pProgress" max="100" value="0" hidden aria-label="采集进度"></progress>
+  <p id="pTrialPlan" class="product-plan" hidden></p>
+  <section id="pTrialTask" class="product-trial-task" hidden aria-label="本次试重任务">
+    <div class="trial-layout">
+      <svg class="trial-wheel" viewBox="0 0 240 240" role="img" aria-label="白标和试重位置">
+        <circle cx="120" cy="120" r="87" class="trial-rim"/>
+        <circle cx="120" cy="120" r="98" class="trial-ticks" pathLength="24"/>
+        <path d="M120 49v142M49 120h142m-21-50-100 100m0-100 100 100" class="trial-spokes"/>
+        <circle cx="120" cy="120" r="15" class="trial-hub"/>
+        <g id="pTrialMark"><path d="M120 119V48"/><rect x="102" y="35" width="36" height="20" rx="6"/></g>
+        <rect class="trial-index" x="114" y="16" width="12" height="18" rx="4"/>
+      </svg>
+      <div><span id="pTrialTaskSource" class="product-result-label">起步建议</span>
+        <b id="pTrialTaskMass" class="product-number">— g</b><p id="pTrialTaskPieces" class="product-trial-pieces"></p>
+        <p id="pTrialTaskLocation" class="product-note"></p>
+      </div>
+    </div>
+    <p id="pTrialTaskReplace" class="product-note"></p>
+    <p id="pTrialAdvice" class="product-note"></p><button id="pUseTrialAdvice" type="button" hidden>采用下一组建议</button>
+    <details><summary>修改试重总量</summary><div class="product-trial-edit"><label>本轮新增（g）<input id="pTrialActualMass" type="number" min="0.1" max="1000" step="0.1"></label><button id="pApplyTrialMass" type="button">确认总量</button></div></details>
+    <label class="product-retest-check"><input id="pTrialInstalled" type="checkbox"><span id="pTrialInstalledText">已按本次总量贴牢，车轮已停稳</span></label>
+  </section>
+  <label id="pRetestCheck" class="product-retest-check" hidden><input id="pTrialRemoved" type="checkbox"><span id="pRetestCheckText">已移除试重，并按图贴好校正块</span></label>
+  <label id="pRetestConditionBox" class="product-retest-condition" hidden>本次与上次复测相比
+    <select id="pRetestCondition"><option value="">请确认配重状态</option><option value="unchanged">配重和传感器位置都没动</option><option value="correction_changed">只调整了校正块</option></select>
+    <small>换车轮、移动传感器或改变安装后，请新建测量。</small>
+  </label>
+  <div id="pCaptureFlow" class="capture-flow" hidden>
+    <div class="capture-stages"><span id="pCaptureSettle">整段记录</span><span id="pCaptureCollect">停转确认</span><span id="pCaptureFinish">统一分析</span></div>
+    <div class="capture-detail"><b id="pCaptureCount">等待完整圈</b><small id="pCaptureNote">匀速和自然滑行均可</small></div>
+  </div>
+  <button class="product-main-button" id="pPrimary" type="button" disabled>开始原轮测量</button>
+  <div class="product-actions"><button id="pCancel" type="button" hidden>取消本段</button><button id="pFinish" type="button" hidden>手动结束并分析</button><button id="pNew" type="button">新建测量</button><button id="pBack" type="button" hidden>返回当前会话</button></div>
+  <p id="pMessage" class="product-error" role="status"></p>
+  <details id="pSetup"><summary><svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg>测量设置</summary>
+    <div class="product-form">
+      <label class="full">车辆／车轮备注<input id="pVehicle" maxlength="18" value="自行车 · 后轮"></label>
+      <label>贴块半径（mm）<input id="pRadius" type="number" min="1" max="2000" value="270"></label>
+      <label>每片配重质量（g）<input id="pPiece" type="number" min="0.1" max="500" step="0.1" value="5"></label>
+      <label class="full">车轮转动方向（保持同一观察侧）<select id="pDirection"><option value="cw">顺时针转动</option><option value="ccw">逆时针转动</option></select></label>
+    </div><small>贴块半径从轮轴中心量到配重中心。</small><small id="pRadiusNote" class="product-radius-note"></small>
+    <details id="pAdvancedSettings"><summary>高级设置</summary><div class="product-form">
+      <label class="full">采集方式<select id="pCaptureMode"><option value="coast">自然滑行 · 等转完</option><option value="timed">匀速 · 固定时长</option></select></label>
+      <label>定时记录（秒）<input id="pCaptureSeconds" type="number" min="10" max="60" step="1" value="30"></label>
+      <label class="full">测量通道<select id="pAxis"><option value="auto" selected>自动选轴（一次采集三轴）</option><option value="0">手动：X轴</option><option value="1">手动：Y轴</option><option value="2">手动：Z轴</option></select></label>
+      <label>试重角度（°，白标为0°）<input id="pTrialAngle" type="number" min="0" max="359.9" step="0.1" value="0"></label>
+      <label>校正半径（mm）<input id="pCorrectionRadius" type="number" min="1" max="2000" value="270"></label>
+      <label>试重计划<select id="pTrialMode"><option value="guided">两片起步探测</option><option value="manual">手动指定试重</option></select></label>
+      <label id="pManualMassField" hidden>手动试重总质量（g）<input id="pMass" type="number" min="0.1" max="1000" step="0.1" value="10"></label>
+    </div><div class="product-actions"><button id="pResetAdvanced" type="button">恢复普通自动设置</button></div></details>
+    <div class="product-actions"><button id="pSaveConfig" type="button">应用参数并新建</button></div>
+  </details>
+</section>
+<section class="card product-card speed-card" id="pSpeedCard" aria-label="原轮与校正后振动对比" hidden>
+  <div class="product-title"><h2><svg class="icon" aria-hidden="true"><use href="#i-compare"/></svg>校正前后</h2><span class="product-tag" id="pSpeedTag">等待复测</span></div>
+  <div class="comparison-hero"><b id="pSpeedChange">等待校正后复测</b><span id="pSpeedBand"></span></div>
+  <div id="pSpeedLegend" class="speed-legend" hidden></div>
+  <svg id="pSpeedPlot" class="speed-plot" viewBox="0 0 600 340" role="img" aria-label="金色原轮与紫色校正后的振动强度，使用相同刻度" hidden></svg>
+  <p class="product-note" id="pSpeedHint">原轮参照已保存，校正后在这里对比。</p>
+  <details id="pSpeedDetails" class="speed-detail"><summary>转速范围与依据</summary><p id="pSpeedMatched" class="product-note"></p><p id="pSpeedResponse" class="product-note"></p><small class="speed-definition">同一通道的整圈 1× 振动。曲线每 20 RPM 一段，阴影为该段圈间最小到最大值。</small><label class="speed-full"><input type="checkbox" id="pSpeedFull">查看共同转速曲线</label></details>
+  <div class="product-actions result-actions"><button id="pSaveChart" type="button" disabled>保存对比图</button><button id="pExportCompare" type="button">导出报告</button><button id="pShowPlacement" type="button" hidden>查看校正位置</button></div>
+</section>
+<section class="card product-card placement-focus" id="pPlacementCard" aria-label="本次配重位置" hidden>
+  <div class="product-title"><h2><svg class="icon" aria-hidden="true"><use href="#i-target"/></svg>配重位置</h2><span class="product-tag" id="pResultTag">等待测量</span></div>
+  <div class="product-result">
+    <svg class="product-wheel" viewBox="0 0 240 240" role="img" aria-label="相对白色零位的配重位置图">
+      <defs><linearGradient id="wheel-rim" x2="90%" y2="100%"><stop stop-color="#b28be8"/><stop offset="1" stop-color="#562d85"/></linearGradient></defs>
+      <circle cx="120" cy="120" r="86" fill="#faf6ff" stroke="url(#wheel-rim)" stroke-width="12"/>
+      <circle cx="120" cy="120" r="73" fill="white" stroke="#e4d9f0"/>
+      <circle class="wheel-ticks" cx="120" cy="120" r="79" pathLength="48"/>
+      <path d="M120 52V188M52 120H188M72 72L168 168M72 168L168 72" class="wheel-spokes"/>
+      <circle cx="120" cy="120" r="13" class="wheel-hub"/>
+      <rect x="114" y="21" width="12" height="18" rx="4" class="wheel-index"/>
+      <text x="120" y="13" text-anchor="middle" class="wheel-zero">白标 0°</text>
+      <text x="221" y="124" id="pRightAngle" text-anchor="middle">90°</text>
+      <text x="17" y="124" id="pLeftAngle" text-anchor="middle">270°</text>
+      <text x="120" y="227" text-anchor="middle">180°</text>
+      <g id="pTarget" hidden>
+        <path id="pSweep" class="wheel-sweep" d=""/>
+        <path id="pRadial" d="M120 120L120 32" class="wheel-radial"/>
+        <g id="pWeight"><rect x="106" y="28" width="28" height="16" rx="5" class="wheel-weight"/><path d="M113 33h14" class="weight-highlight"/></g>
+      </g>
+    </svg>
+    <div class="result-readouts"><div><span class="product-result-label">校正质量</span><b class="product-number" id="pResultMass">— g</b></div><div><span class="product-result-label">相对白标</span><b class="product-number" id="pResultAngle">— °</b></div></div>
+  </div>
+  <p class="product-result-direction" id="pResultDirection">白标为0° · 保持同一观察侧</p>
+  <p class="product-note placement-note" id="pPlacementNote"></p>
+  <details class="placement-details"><summary>结果依据</summary>
+    <p class="product-note" id="pQuality"></p>
+    <div id="pComparison" class="product-comparison" hidden><span class="product-result-label">校正后复测</span><b id="pImprovement">—</b><p class="product-note" id="pCompareDetail"></p><p class="product-note" id="pRepeatQuality"></p></div>
+    <small id="pStorage">摘要自动保存</small>
+  </details>
+  <div class="product-actions"><button id="pExport" type="button">导出会话报告</button></div>
+</section>
+<details class="card product-card utility-card"><summary><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>历史与数据</summary>
+  <div id="pHistory" class="product-history"></div><button id="pDemo" type="button">体验完整合成演示</button>
+  <p class="product-summary" id="pSummary" style="white-space:pre-line"></p>
+  <div id="pRetestRows" class="product-retest-rows"></div><p id="pRetestRetention" class="product-note"></p>
+  <div class="product-actions"><button id="rawDownload" type="button" disabled>下载完整CSV</button><button id="poseDownload" type="button" disabled>下载姿态CSV</button></div>
+  <p id="rawStatus" class="product-note">还没有原始记录</p>
+  <p class="product-note">最近 3 条会话。原始 CSV 保留最新一段。</p>
+</details>
+</div>
+
+<details class="card fold utility-card" id="waveDetails"><summary><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg><span>振动波形</span><span class="summary-end">X · Y · Z</span></summary><div class="fold-content"><section class="wave-card" aria-label="三轴时域波形">
+      <div class="section-heading"><span class="micro" id="waveMeta">三轴同步</span><div class="wave-top-actions"><button class="icon-button" id="pauseButton" aria-pressed="false"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="4" y="3" width="2.5" height="10" rx=".6"/><rect x="9.5" y="3" width="2.5" height="10" rx=".6"/></svg><span id="pauseLabel">暂停</span></button><button class="icon-button" id="exportButton" disabled><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m-3-3 3 3 3-3M3 10v3h10v-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>CSV</button></div></div>
+      <div class="toolbar">
+        <div class="segmented" role="group" aria-label="三图共用时间窗口"><button data-window="2" aria-pressed="false">2秒</button><button data-window="5" aria-pressed="true">5秒</button><button data-window="10" aria-pressed="false">10秒</button></div>
+        <label class="switch-label"><input type="checkbox" id="demeanToggle" checked>去直流</label>
+        <label><span class="sr-only">三轴量程</span><select id="waveScale" aria-label="三图共用纵轴量程"><option value="auto">自动量程</option><option value="0.02">±0.02 m/s²</option><option value="0.1">±0.1 m/s²</option><option value="0.5">±0.5 m/s²</option><option value="2">±2 m/s²</option><option value="20">±20 m/s²</option></select></label>
+      </div>
+      <div class="plot-shell plot-stack" id="wavePlots">
+        <section class="axis-plot" aria-labelledby="waveTitleX"><h3 id="waveTitleX" class="axis-plot-title axis-x">X 轴</h3><canvas id="waveCanvas" data-wave-axis="x" role="img" aria-label="X轴加速度时域图，与Y、Z共用时间窗和量程，单位米每二次方秒"></canvas></section>
+        <section class="axis-plot" aria-labelledby="waveTitleY"><h3 id="waveTitleY" class="axis-plot-title axis-y">Y 轴</h3><canvas id="waveCanvasY" data-wave-axis="y" role="img" aria-label="Y轴加速度时域图，与X、Z共用时间窗和量程，单位米每二次方秒"></canvas></section>
+        <section class="axis-plot" aria-labelledby="waveTitleZ"><h3 id="waveTitleZ" class="axis-plot-title axis-z">Z 轴</h3><canvas id="waveCanvasZ" data-wave-axis="z" role="img" aria-label="Z轴加速度时域图，与X、Y共用时间窗和量程，单位米每二次方秒"></canvas></section>
+        <div class="plot-empty" id="plotEmpty"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M3 22h8l4-11 7 21 5-15 3 5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg><strong id="emptyTitle">等待采集数据</strong><span id="emptyNote">连接设备 Wi-Fi 后，波形将在这里显示</span></div><div class="plot-watermark" id="plotWatermark" hidden></div>
+      </div>
+      <div class="plot-caption"><span id="processingNote">显示去直流（中位基线） · CSV 保留原始值</span><span id="visibleCount">0 点 / 5 秒</span></div>
+      <div class="optical-heading"><div class="optical-title">光电 DO 抽取采样 <span class="digital" id="doChip">—</span></div><span class="micro">0 / 1 · 非边沿时间</span></div><canvas class="optical-canvas" id="opticalCanvas" role="img" aria-label="随加速度波形抽取的光电数字零一值，不用于边沿计时"></canvas>
+      <div class="wave-footer"><span class="state-line" id="waveState"><i></i><span id="waveStateText">等待输入</span></span><span>FIFO 读出时间</span></div><p class="gap-note" id="gapNote" hidden></p>
+    </section>
+</div></details>
+<footer class="page-footer"><span>WheelBalance · <b id="firmwareValue">—</b></span><span id="updateAge">等待响应</span></footer><details class="help"><summary>设备信息</summary><p>Wi-Fi 使用固件构建时配置的热点<br>网址 192.168.4.1<br><span id="uptimeValue">运行 —</span></p><p>单平面工程原型，效果以本次复测为准。更换车轮或移动传感器后请新建测量。</p></details>
+</main><div class="toast" id="toast" role="status" hidden></div>
+<script>
+(() => {
+  'use strict';
+  // BEGIN DEVICE JSON TRANSPORT
+  // One live request and one session/control request, including their bodies.
+  // Keep each feed bounded without letting a slow session freeze waveforms.
+  // CSV retains its separately bounded exporter connection.
+  const deviceLink=window.WheelDeviceLink=(()=>{
+    const lanes={live:{queue:[],active:false},control:{queue:[],active:false}};
+    async function next(feed){
+      if(feed.active||!feed.queue.length)return;
+      feed.active=true;const job=feed.queue.shift(),controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),job.timeoutMs);
+      try{const response=await fetch(job.url,{...job.options,signal:controller.signal});
+        if(!response.ok){const error=Error('http');error.httpStatus=response.status;throw error;}
+        job.resolve(await response.json());
+      }catch(error){job.reject(error);}
+      finally{clearTimeout(timer);feed.active=false;next(feed);}
+    }
+    function json(url,{timeoutMs=3000,priority=false,lane='control',...options}={}){
+      return new Promise((resolve,reject)=>{
+        const feed=lane==='live'?lanes.live:lane==='control'?lanes.control:null;
+        if(!feed){reject(Error('invalid request channel'));return;}
+        if(feed.queue.length>=8){reject(Error('request queue full'));return;}
+        const job={url,timeoutMs,options,resolve,reject};
+        if(priority)feed.queue.unshift(job);else feed.queue.push(job);next(feed);
+      });
+    }
+    return {json};
+  })();
+  // END DEVICE JSON TRANSPORT
+  const $ = id => document.getElementById(id);
+  const fmt = new Intl.NumberFormat('zh-CN', {maximumFractionDigits:0});
+  const rpmFormat = new Intl.NumberFormat('zh-CN', {minimumFractionDigits:1,maximumFractionDigits:1});
+  const waveCanvases = {x:'waveCanvas',y:'waveCanvasY',z:'waveCanvasZ'};
+  const colors = {x:'#8952c7',y:'#5264bf',z:'#be528f'};
+  const refNames = {period_ok:'参考有效',no_reference:'等待光电参考',wait_second_edge:'等待下一标记',no_reference_timeout:'无参考，已超时',disabled:'光电输入未启用',input_loss_reboot_required:'光电输入丢失',clock_fault_reboot_required:'光电时间异常',sample_gap_reboot_required:'光电采样间断',valid:'参考有效',tracking:'参考跟踪中',locked:'参考有效',acquiring:'建立参考中',waiting:'等待参考',wait:'等待参考',idle:'等待参考',stopped:'参考已停止',stale:'参考已超时',timeout:'参考已超时',invalid:'参考无效',lost:'参考丢失',no_signal:'未检测到参考',syncing:'参考同步中',resync:'重新建立参考',resyncing:'重新建立参考'};
+  const state = {data:null,boot:null,cursor:0,points:[],ids:new Set(),window:5,paused:false,frozen:[],frozenMeta:null,lastFresh:0,lastUptime:null,lastError:'',started:performance.now(),historyGap:false,displayGaps:0,drawQueued:false};
+  let toastTimer,displayedRpm=null;
+  function setText(id,text){
+    const element=$(id);
+    if(element.textContent!==text)element.textContent=text;
+  }
+  function number(value){return Number.isFinite(value)?fmt.format(value):'—';}
+  function age(value){if(!Number.isFinite(value))return '—';return value<1000000?(value/1000).toFixed(1)+' ms':(value/1000000).toFixed(2)+' s';}
+  function runtime(us){if(!Number.isFinite(us))return '运行 —';const sec=Math.max(0,Math.floor(us/1e6)),h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return '运行 '+(h?h+'时 ':'')+(m?m+'分 ':'')+s+'秒';}
+  function isFresh(){return !!state.data && state.data.source!=='offline' && performance.now()-state.lastFresh<=2000;}
+  function referenceOverdue(data){
+    const {period_us:period,last_accepted_edge_us:lastMark}=data.optical;
+    if(!Number.isSafeInteger(period)||period<=0||!Number.isSafeInteger(lastMark)||
+       lastMark<0||lastMark>data.uptime_us)return false;
+
+    // Use the device clock for the captured interval. Between live replies,
+    // let the local monotonic clock advance its age even if a poll is delayed.
+    const elapsed=data.source==='live_device'?Math.max(0,performance.now()-state.lastFresh)*1000:0;
+    const markAge=data.uptime_us-lastMark+elapsed;
+    return markAge>=Math.max(300000,1.3*period);
+  }
+  function renderGauge(rpm){
+    if(rpm===displayedRpm)return;
+    displayedRpm=rpm;
+    const valid=rpm!==null;
+    $('rpmArc').toggleAttribute('hidden',!valid);
+    $('rpmNeedle').toggleAttribute('hidden',!valid);
+    $('rpmValue').classList.toggle('compact',valid&&rpm>=1000);
+    const limit=300*Math.max(1,Math.ceil(rpm/300));
+    setText('rpmGaugeMax',String(limit));
+    if(valid){
+      const fraction=rpm/limit;
+      $('rpmArc').setAttribute('stroke-dasharray',(100*fraction).toFixed(2)+' 100');
+      $('rpmNeedle').setAttribute('transform','rotate('+(270*fraction-135).toFixed(2)+' 80 63)');
+    }
+  }
+  function pointValid(p){return p&&Number.isSafeInteger(p.id)&&p.id>=0&&Number.isFinite(p.t_us)&&p.t_us>=0&&Number.isSafeInteger(p.source_seq)&&Number.isSafeInteger(p.epoch)&&['x','y','z'].every(a=>Number.isFinite(p[a]))&&(p.level===0||p.level===1||p.level===null||p.level===-1)&&(p.gap_before===undefined||typeof p.gap_before==='boolean');}
+  function validate(d){return d&&d.schema_version===1&&['live_device','replay','test','offline'].includes(d.source)&&typeof d.boot_id==='string'&&d.boot_id.length>0&&Number.isFinite(d.uptime_us)&&d.uptime_us>=0&&d.imu&&d.optical&&d.faults&&d.waveform&&Array.isArray(d.waveform.points)&&Number.isSafeInteger(d.waveform.last_id)&&d.waveform.last_id>=0&&d.waveform.points.every(pointValid);}
+  function ingest(d){
+    if(!validate(d))throw new Error('schema');
+    const bootChanged=state.boot!==null&&state.boot!==d.boot_id;
+    if(state.boot!==d.boot_id){state.boot=d.boot_id;state.points=[];state.ids.clear();state.cursor=0;state.lastUptime=null;state.historyGap=false;state.displayGaps=0;if(state.paused){state.frozen=[];state.frozenMeta=null;}if(bootChanged)toast('设备已重启，已保存的历史仍可查看');}
+    if(state.lastUptime===null||d.uptime_us>state.lastUptime){state.lastFresh=performance.now();state.lastUptime=d.uptime_us;}
+    state.data=d;state.lastError='';
+    for(const p of d.waveform.points){if(!state.ids.has(p.id)){state.ids.add(p.id);state.points.push(p);}}
+    state.points.sort((a,b)=>a.id-b.id);
+    if(state.points.length){const end=state.points[state.points.length-1].t_us,cut=end-12e6;const retained=state.points.filter(p=>p.t_us>=cut).slice(-1800);state.points=retained;state.ids=new Set(retained.map(p=>p.id));}
+    state.cursor=Math.max(state.cursor,d.waveform.last_id);
+    if(d.waveform.truncated)state.historyGap=true;
+    renderStatus();scheduleDraw();
+  }
+  function renderStatus(){
+    const d=state.data,fresh=isFresh(),waiting=!d&&performance.now()-state.started<2000,offline=d&&d.source==='offline',replayDone=d&&d.source==='replay'&&d.replay&&d.replay.finished;
+    $('connectionBadge').className='badge '+(replayDone?'warn':fresh?'good':waiting||offline?'warn':'bad');setText('connectionLabel',offline?'未连接':replayDone?'回放结束':fresh?'已连接':waiting?'连接中':'正在重连');
+    const source=d?d.source:null;
+    $('sourceBadge').hidden=!source||source==='live_device';
+    $('sourceBadge').className='badge '+(source&&source!=='offline'?'warn':'');
+    setText('sourceBadge',source==='replay'?'历史回放':source==='test'?'测试数据':'界面预览');
+    setText('updateAge',offline?'本地界面预览':d?'更新于 '+Math.max(0,(performance.now()-state.lastFresh)/1000).toFixed(1)+' 秒前':'等待设备响应');
+    let banner='',kind='status-banner';
+    if(offline)banner='离线预览';
+    else if(replayDone)banner='回放结束';
+    else if(!fresh){if(!waiting){banner=d?'等待设备响应':'请连接设备热点';kind+=' bad';}}
+    else if(source!=='live_device'){banner=source==='replay'?'历史波形':'测试数据 · 非实测';kind+=' replay';}
+    else if(!d.imu.online){banner='传感器离线，请检查供电与接线。';kind+=' bad';}
+    $('statusBanner').hidden=!banner;$('statusBanner').className=kind;setText('bannerText',banner);
+    const rpmMeasured=fresh&&d&&d.rpm_valid===true&&Number.isFinite(d.rpm)&&d.rpm>0;
+    const late=rpmMeasured&&referenceOverdue(d);
+    const rpmOK=rpmMeasured&&!late;
+    setText('rpmValue',rpmOK?rpmFormat.format(d.rpm):'—');
+    renderGauge(rpmOK?d.rpm:null);
+    $('refStatus').className='ref-status'+(rpmOK?' valid':'');const ref=d?String(d.ref_state||'未知'):'';
+    const waitingForMark=late||ref==='WAIT_SECOND_EDGE';
+    setText('refStatus',!fresh?'等待光电参考':rpmOK?'参考有效':waitingForMark?'等下一白标':(refNames[ref.toLowerCase()]||ref));
+    setText('rpmMode',rpmOK?'REFERENCE RPM':'RPM UNAVAILABLE');setText('imuState',!fresh?'状态过期':d.imu.online?'在线':'离线');
+    setText('firmwareValue',d?String(d.firmware||'—').split('@').pop():'—');setText('uptimeValue',runtime(d&&d.uptime_us));
+    setText('waveStateText',state.paused?'已暂停':fresh?'持续接收中':'历史窗口 · 无新更新');renderRaw();
+  }
+  function windowPoints(){const all=state.paused?state.frozen:state.points;if(!all.length)return [];const end=all[all.length-1].t_us;return all.filter(p=>p.t_us>=end-state.window*1e6);}
+  function scheduleDraw(){if(state.drawQueued)return;state.drawQueued=true;requestAnimationFrame(()=>{state.drawQueued=false;draw();});}
+  function canvasSetup(id){const canvas=$(id),rect=canvas.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2),w=Math.max(1,rect.width),h=Math.max(1,rect.height);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.font='10px system-ui, sans-serif';return {ctx,w,h};}
+  function breaks(a,b){
+    if(!a)return true;
+    /* source_seq is the 500Hz acquisition sequence. Gaps in that sequence
+       are normal when the display observes only FIFO batch endpoints. */
+    return b.gap_before===true||b.id!==a.id+1||b.epoch!==a.epoch||
+      b.t_us<a.t_us||b.t_us-a.t_us>250000||b.source_seq<=a.source_seq;
+  }
+  function renderWaveGaps(){
+    const notes=[];
+    if(state.historyGap)notes.push('网页历史曾覆盖，可能缺少显示点；不等于传感器丢样。');
+    if(state.displayGaps)notes.push('当前窗口保留 '+state.displayGaps+' 处显示或输入间断，未补造数据。');
+    $('gapNote').hidden=!notes.length;setText('gapNote',notes.join(' '));
+  }
+  function draw(){
+    if(!$('waveDetails').open||$('waveCanvas').getBoundingClientRect().width<2)return;
+    const points=windowPoints(),selected=Object.keys(waveCanvases),end=points.length?points[points.length-1].t_us:0,start=end-state.window*1e6;
+    state.displayGaps=points.reduce((count,p,i)=>count+(i&&breaks(points[i-1],p)?1:0),0);renderWaveGaps();
+    const offsets={x:0,y:0,z:0},demean=$('demeanToggle').checked;
+    if(demean&&points.length)for(const a of Object.keys(offsets)){const values=points.map(p=>p[a]).sort((u,v)=>u-v),mid=values.length>>1;offsets[a]=values.length%2?values[mid]:(values[mid-1]+values[mid])/2;}
+    const left=43,right=10,top=23,bottom=24;
+    let extent=0;for(const p of points)for(const a of selected)extent=Math.max(extent,Math.abs(p[a]-offsets[a]));
+    let bound=1;if(extent>0){const n=extent*1.15,e=Math.pow(10,Math.floor(Math.log10(n))),v=n/e;bound=(v<=1?1:v<=2?2:v<=5?5:10)*e;}
+    const fixedBound=Number($('waveScale').value);if(Number.isFinite(fixedBound)&&fixedBound>0)bound=fixedBound;
+    /* One window, one scale and one render frame for every axis. Filtering and
+       source samples remain unchanged; only the display is split. */
+    for(const a of selected){
+      const canvas=$(waveCanvases[a]),{ctx,w,h}=canvasSetup(waveCanvases[a]),pw=Math.max(1,w-left-right),ph=h-top-bottom;
+      Object.assign(canvas.dataset,{range:String(bound),startUs:String(start),endUs:String(end),windowSeconds:String(state.window),paused:String(state.paused),pointCount:String(points.length),lastId:String(points.length?points[points.length-1].id:0)});
+      const y=value=>top+ph/2-value/(2*bound)*ph,x=t=>left+(t-start)/(state.window*1e6)*pw;
+      ctx.lineWidth=1;ctx.fillStyle='#91a096';ctx.textAlign='right';ctx.textBaseline='middle';
+      for(let i=0;i<5;i++){const value=bound*(1-i/2),py=top+ph*i/4;ctx.strokeStyle=i===2?'#d9e4d7':'#edf1ea';ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(w-right,py);ctx.stroke();const label=Math.abs(value)<1e-12?'0':Math.abs(value)>=100?value.toFixed(0):Math.abs(value)>=1?value.toFixed(1):value.toPrecision(2);ctx.fillText(label,left-8,py);}
+      ctx.textAlign='center';ctx.textBaseline='top';for(let i=0;i<=4;i++){const px=left+pw*i/4;ctx.strokeStyle='#edf1ea';ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,top+ph);ctx.stroke();const seconds=-state.window+state.window*i/4;ctx.fillText(i===4?'0 s':seconds.toFixed(state.window===5?2:1).replace(/\.0$/,''),px,top+ph+9);}
+      ctx.textAlign='left';ctx.fillStyle='#8c9e90';ctx.fillText('m/s²',2,2);
+      ctx.save();ctx.beginPath();ctx.rect(left,top-2,pw,ph+4);ctx.clip();
+      ctx.strokeStyle=colors[a];ctx.lineWidth=1.4;ctx.lineJoin='round';ctx.beginPath();let prev=null;for(const p of points){const px=x(p.t_us),py=y(p[a]-offsets[a]);if(breaks(prev,p))ctx.moveTo(px,py);else ctx.lineTo(px,py);prev=p;}ctx.stroke();ctx.fillStyle=colors[a];ctx.beginPath();for(let i=0;i<points.length;i++){const p=points[i];if(breaks(i?points[i-1]:null,p)&&(i===points.length-1||breaks(p,points[i+1]))){const px=x(p.t_us),py=y(p[a]-offsets[a]);ctx.moveTo(px+1.8,py);ctx.arc(px,py,1.8,0,Math.PI*2);}}ctx.fill();
+      ctx.restore();
+    }
+    $('plotEmpty').hidden=points.length>0;setText('emptyTitle',state.paused?'冻结窗口暂无数据':'等待采集数据');setText('emptyNote',state.data?'当前浏览器窗口还没有加速度点':'连接设备 Wi-Fi 后，波形将在这里显示');
+    const meta=state.paused&&state.frozenMeta?state.frozenMeta:state.data,source=meta&&meta.source;
+    $('plotWatermark').hidden=!source||source==='live_device'||source==='offline';setText('plotWatermark',source==='replay'?'历史回放 · REPLAY':'测试数据 · TEST');
+    const clipped=points.some(p=>selected.some(a=>Math.abs(p[a]-offsets[a])>bound));setText('processingNote',(demean?'显示去直流（中位基线）':'显示原始值'+(meta&&meta.waveform.gravity_included?'（含重力）':''))+' · '+(Number.isFinite(fixedBound)&&fixedBound>0?'固定':'自动')+'量程 ±'+bound+' m/s²'+(clipped?' · 有值超出量程，CSV保留完整值':' · CSV保留原始值'));setText('visibleCount',points.length+' 点 / '+state.window+' 秒');
+    const op=canvasSetup('opticalCanvas'),oc=op.ctx,oh=op.h,ow=op.w,ol=left,or=right,ot=12,ob=oh-15,ox=t=>ol+(t-start)/(state.window*1e6)*(ow-ol-or),oy=v=>v===1?ot:ob;
+    oc.font='9px system-ui, sans-serif';oc.fillStyle='#8c9e90';oc.textAlign='right';oc.textBaseline='middle';
+    for(const v of [1,0]){oc.fillText(String(v),ol-9,oy(v));oc.strokeStyle='#edf1ea';oc.beginPath();oc.moveTo(ol,oy(v));oc.lineTo(ow-or,oy(v));oc.stroke();}
+    oc.save();oc.beginPath();oc.rect(ol,0,Math.max(1,ow-ol-or),oh);oc.clip();oc.fillStyle='#738c67';for(const p of points){if(p.level!==0&&p.level!==1)continue;oc.beginPath();oc.arc(ox(p.t_us),oy(p.level),1.3,0,Math.PI*2);oc.fill();}oc.restore();
+    const last=points.length?points[points.length-1]:null;setText('doChip',last&&(last.level===0||last.level===1)?'DO '+last.level:'无同步值');$('exportButton').disabled=points.length===0;
+  }
+  function toast(message){clearTimeout(toastTimer);setText('toast',message);$('toast').hidden=false;toastTimer=setTimeout(()=>{$('toast').hidden=true;},3500);}
+  function exportCSV(){
+    const points=windowPoints();if(!points.length){toast('当前窗口没有可导出的数据');return;}
+    const d=state.paused&&state.frozenMeta?state.frozenMeta:state.data;
+    const csvCell=v=>'"'+String(v==null?'':v).replace(/"/g,'""').replace(/[\r\n]/g,' ')+'"';
+    const info=[['schema_version',2],['source',d.source],['boot_id',d.boot_id],['firmware',d.firmware],['window_state',state.paused?'frozen':'current'],['window_seconds',state.window],['gravity_included',d.waveform.gravity_included],['timestamp_kind',d.waveform.timestamp_kind],['display_hz',d.waveform.display_hz],['acquisition_hz',d.waveform.acquisition_hz],['values','raw_m_s2; display_median_dc_removal_not_applied'],['web_history_gap_seen',state.historyGap]];
+    const lines=info.map(([key,value])=>'# '+key+','+csvCell(value));lines.push('id,t_us,source_seq,epoch,x_m_s2,y_m_s2,z_m_s2,optical_level,display_gap_before');
+    for(let i=0;i<points.length;i++){const p=points[i];lines.push([p.id,p.t_us,p.source_seq,p.epoch,p.x,p.y,p.z,p.level,i&&breaks(points[i-1],p)?1:0].join(','));}
+    const blob=new Blob(['\uFEFF'+lines.join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='wheelbalance_'+d.source+'_'+(state.paused?'frozen':'window')+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已导出 '+points.length+' 点原始值（'+(state.paused?'冻结':'当前')+'窗口）');
+  }
+  const rawUI={busy:false,downloading:false,message:''};
+  function rawData(){const d=state.data,r=d&&d.raw_capture;return d&&d.source==='live_device'&&/^[a-f0-9]{16}$/.test(d.boot_id)&&r&&r.enabled===true&&['IDLE','RECORDING','CLOSING','READY'].includes(r.state)&&Number.isSafeInteger(r.id)&&r.id>=0&&Number.isSafeInteger(r.samples)&&r.samples>=0&&Number.isSafeInteger(r.references)&&r.references>=0?r:null;}
+  function renderRaw(){
+    const r=rawData(),fresh=isFresh(),busy=rawUI.downloading||r?.export_busy===true;
+    $('rawDownload').disabled=!fresh||!r||r.state!=='READY'||busy;
+    $('poseDownload').disabled=!fresh||!r||r.state!=='READY'||r.pose?.enabled!==true||r.pose?.frozen!==true||busy;
+    setText('rawStatus',rawUI.message||(!r||!r.id?'还没有原始记录':r.state==='READY'?'最新一段原始记录可下载；下一段会覆盖它。':'测量完成后可下载原始记录。'));
+  }
+  async function downloadRaw(pose=false){
+    const r=rawData();if(!r||!isFresh()||r.state!=='READY'||rawUI.busy||rawUI.downloading||r.export_busy===true)return;
+    if(pose&&(r.pose?.enabled!==true||r.pose?.frozen!==true))return;
+    const kind=pose?'pose':'raw',schema=pose?'wheelbalance_pose_v1':'wheelbalance_raw_v1',endpoint=pose?'raw-pose':'raw';
+    const id=r.id,boot=state.data.boot_id;rawUI.downloading=true;rawUI.message=pose?'正在下载姿态记录…':'正在下载完整记录…';renderRaw();const c=new AbortController(),timer=setTimeout(()=>c.abort(),90000);
+    try{const response=await fetch('/api/'+endpoint+'.csv?id='+id+'&boot_id='+encodeURIComponent(boot),{cache:'no-store',signal:c.signal});if(!response.ok||!response.headers.get('content-type')?.startsWith('text/csv')||response.headers.get('x-capture-id')!==String(id)||response.headers.get('x-boot-id')!==boot)throw Error('identity');const blob=await response.blob(),text=await blob.text();if(!text.startsWith('# schema='+schema+'\n')||!text.includes('\n# capture_id='+id+'\n')||!text.includes('\n# boot_id='+boot+'\n')||!text.endsWith('# end=1\n'))throw Error('incomplete');const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='wheelbalance_'+kind+'_'+boot+'_'+id+'.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);rawUI.message=pose?'姿态记录已下载；未用于配重计算。':'完整记录已下载；未作精度认定。';}
+    catch(e){rawUI.message='下载未完成，请重新下载已保存记录。';}finally{clearTimeout(timer);rawUI.downloading=false;renderRaw();}
+  }
+  $('rawDownload').addEventListener('click',()=>downloadRaw(false));$('poseDownload').addEventListener('click',()=>downloadRaw(true));
+  document.querySelectorAll('[data-window]').forEach(button=>button.addEventListener('click',()=>{state.window=Number(button.dataset.window);document.querySelectorAll('[data-window]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));scheduleDraw();}));
+  $('demeanToggle').addEventListener('change',scheduleDraw);
+  $('pauseButton').addEventListener('click',()=>{state.paused=!state.paused;if(state.paused){state.frozen=state.points.slice();state.frozenMeta=state.data?Object.assign({},state.data,{waveform:Object.assign({},state.data.waveform)}):null;}else{state.frozen=[];state.frozenMeta=null;}$('pauseButton').setAttribute('aria-pressed',String(state.paused));$('pauseButton').classList.toggle('active',state.paused);setText('pauseLabel',state.paused?'继续':'暂停');renderStatus();scheduleDraw();});
+  $('exportButton').addEventListener('click',exportCSV);
+  $('waveDetails').addEventListener('toggle',scheduleDraw);
+  $('waveScale').addEventListener('change',scheduleDraw);
+  window.addEventListener('resize',scheduleDraw);if(typeof ResizeObserver!=='undefined'){new ResizeObserver(scheduleDraw).observe($('wavePlots'));}
+  let liveFailures=0;
+  async function poll(){
+    const started=performance.now();
+    try{const data=await deviceLink.json('/api/live?after='+encodeURIComponent(state.cursor),{cache:'no-store',timeoutMs:1600,lane:'live'});ingest(data);liveFailures=0;}
+    catch(error){liveFailures=Math.min(liveFailures+1,5);state.lastError=error&&error.message==='schema'?'数据格式不兼容':error&&error.name==='AbortError'?'请求超时':'请求失败';renderStatus();}
+    finally{
+      const data=state.data;
+      const tracking=isFresh()&&(data.rpm_valid===true||data.ref_state==='WAIT_SECOND_EDGE');
+      const pollMs=tracking?125:200;
+      const delay=liveFailures?Math.min(5000,500*2**(liveFailures-1)):Math.max(0,pollMs-(performance.now()-started));
+      setTimeout(poll,delay);
+    }
+  }
+  setInterval(()=>{renderStatus();},250);
+  renderStatus();scheduleDraw();poll();
+})();
+</script>
+<script src="/speed.js?v=0.6.7"></script>
+<script src="/product.js?v=0.6.7"></script>
+</body>
+</html>
