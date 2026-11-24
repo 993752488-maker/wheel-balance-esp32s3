@@ -7,6 +7,7 @@
 #include "product_assessment.h"
 #include "live_analysis_core.h"
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 static sync_sample_t samples[SYNC_MAX_SAMPLES];
@@ -20,7 +21,7 @@ static product_config_t config;
 static product_solution_t result;
 static product_comparison_t comparison;
 static size_t selected_count;
-static bool settling,input_synthetic,auto_solve;
+static bool settling,input_synthetic,auto_solve,timed;
 static product_window_stage_t window_stages[4];
 static void assessment_json(void)
 {
@@ -39,7 +40,8 @@ static void speed_stage_json(unsigned stage)
     const product_speed_stage_t *v=&profile.stages[stage];const char *names[]={"empty","preview","frozen","invalid"};
     printf("{\"state\":\"%s\",\"capture_id\":%u,\"epoch\":%u,\"start_us\":%" PRIu64 ",\"end_us\":%" PRIu64 ",\"updated_us\":0,\"used_turns\":%u,\"rejected_turns\":%u,\"outside_speed_turns\":%u,\"points\":[",names[v->mode],v->capture_id,v->epoch,v->start_us,v->end_us,v->used_turns,v->rejected_turns,v->outside_turns);
     bool comma=false;for(unsigned i=0;i<PRODUCT_SPEED_BINS;++i){const product_speed_bin_t *b=&v->bins[i];if(!b->count)continue;
-        printf("%s{\"lower_rpm\":%u,\"upper_rpm\":%u,\"count\":%u,\"rms\":%.9g,\"low\":%.9g,\"high\":%.9g}",comma?",":"",(i+1)*20,(i+2)*20,b->count,(double)b->rms,(double)b->minimum,(double)b->maximum);comma=true;}
+        const unsigned lower=product_speed_lower_rpm(v,i);
+        printf("%s{\"lower_rpm\":%u,\"upper_rpm\":%u,\"count\":%u,\"rms\":%.9g,\"low\":%.9g,\"high\":%.9g}",comma?",":"",lower,lower+PRODUCT_SPEED_WIDTH,b->count,(double)b->rms,(double)b->minimum,(double)b->maximum);comma=true;}
     printf("]}");
 }
 static void window_stage_json(unsigned stage)
@@ -78,8 +80,10 @@ static void demo(void)
 }
 static int dataset(unsigned stage)
 {
-    char line[512];product_stage_summary_t *s=&runs[stage].summary;unsigned integrity=0;
-    if(!fgets(line,sizeof(line),stdin)||sscanf(line,"D,%u,%u,%u,%u,%" SCNu64 ",%" SCNu64 ",%u",&s->capture_id,&s->epoch,&s->samples,&s->references,&s->start_us,&s->end_us,&integrity)!=7)return 2;
+    char line[512];product_stage_summary_t *s=&runs[stage].summary;unsigned integrity=0;double target_rpm=0;
+    if(!fgets(line,sizeof(line),stdin)||sscanf(line,"D,%u,%u,%u,%u,%" SCNu64 ",%" SCNu64 ",%u,%lf",
+        &s->capture_id,&s->epoch,&s->samples,&s->references,&s->start_us,&s->end_us,&integrity,&target_rpm)!=(timed?8:7))return 2;
+    if(timed&&(!isfinite(target_rpm)||target_rpm<PRODUCT_MIN_RPM||target_rpm>=PRODUCT_TIMED_MAX_RPM_EXCLUSIVE))return 2;
     s->integrity_valid=integrity==1;size_t nr=0,rows=0;bool ended=false;live_core_init(&clock_core,samples,SYNC_MAX_SAMPLES);
     while(fgets(line,sizeof(line),stdin)){
         if(!strcmp(line,"E\n")||!strcmp(line,"E\r\n")){ended=true;break;}
@@ -96,10 +100,12 @@ static int dataset(unsigned stage)
     if(!ended||!rows||!live_core_retime(&clock_core))return 3;
     if(nr<3){s->reason=PRODUCT_TOO_FEW_TURNS;selected_count=0;return 0;}
     selection_config_t cfg=selection_default_config();size_t count=0;
-    if(settling)cfg.fit.acceleration_tolerance=.03;
+    if(settling)product_window_configure_fit(&cfg,timed?CAPTURE_TIMED:CAPTURE_COAST);
     if(coast_select(&cfg,clock_core.samples,clock_core.count,refs,nr,(sync_quality_t){SYNC_TIME_ESTIMATED,0},turns,COAST_SELECTION_MAX_REFS,&count)!=SELECTION_OK)return 3;
     selected_count=count;
-    if(settling){product_window_select(turns,count,&window_stages[stage]);
+    if(settling){
+        if(timed)product_window_select_timed(turns,count,target_rpm,&window_stages[stage]);
+        else product_window_select(turns,count,&window_stages[stage]);
         window_stages[stage].capture_id=s->capture_id;window_stages[stage].epoch=s->epoch;window_stages[stage].start_us=s->start_us;window_stages[stage].end_us=s->end_us;}
     (void)product_extract_run(turns,count,config.axis,&runs[stage]);
     for(unsigned k=0;k<3;++k){all_axes[stage][k].summary=*s;(void)product_extract_run(turns,count,k,&all_axes[stage][k]);}return 0;
@@ -115,11 +121,25 @@ static void profile(void)
         printf("%s{\"index\":%u,\"fit_valid\":%s,\"reason_bits\":%u,\"rpm\":%.17g,\"previous_rpm\":%.17g,\"real\":%.17g,\"imag\":%.17g,\"reference\":%" PRIu64 ",\"time_us\":%" PRIu64 "}",i?",":"",(unsigned)i,f->valid?"true":"false",(unsigned)turns[i].reasons[config.axis],f->valid?f->rpm:0,f->valid?f->rpm_previous:0,f->valid?f->axis[config.axis].real:0,f->valid?f->axis[config.axis].imag:0,f->ref_last,f->end_us);}
     printf("],\"capture_window\":");window_stage_json(0);printf(",\"speed_profile_stage\":");speed_stage_json(0);printf(",\"settling_applied\":%s,\"mass_angle_output\":false}\n",settling?"true":"false");
 }
+
+static bool assess_pair(unsigned datasets)
+{
+    if(!auto_solve)return product_assess_runs(&config,&runs[0],&runs[1],&result,&assessment);
+    unsigned chosen=config.axis;
+    const bool ok=product_assess_axes(&config,all_axes[0],all_axes[1],&chosen,&result,&assessment);
+    config.axis=chosen;
+    for(unsigned i=0;i<datasets;++i)runs[i]=all_axes[i][chosen];
+    return ok;
+}
+
 int main(int argc,char **argv)
 {
+    if(argc>1&&!strcmp(argv[1],"--timed")){timed=true;settling=true;--argc;++argv;}
     if(argc==2&&!strcmp(argv[1],"--auto-pair-window")){auto_solve=true;argv[1]="--pair-window";}
     else if(argc==2&&!strcmp(argv[1],"--auto-window")){auto_solve=true;argv[1]="--window";}
+    else if(timed&&argc==2&&!strcmp(argv[1],"--auto-repeat")){auto_solve=true;argv[1]="--repeat";}
     if(argc==2&&!strcmp(argv[1],"--synthetic-window")){settling=true;input_synthetic=true;argc=1;}
+    if(argc==2&&!strcmp(argv[1],"--synthetic-timed")){timed=true;settling=true;input_synthetic=true;auto_solve=true;argc=1;}
     if(argc==2&&strstr(argv[1],"window")){settling=true;
         if(!strcmp(argv[1],"--profile-all-window"))argv[1]="--profile-all";
         else if(!strcmp(argv[1],"--profile-window"))argv[1]="--profile";
@@ -131,7 +151,7 @@ int main(int argc,char **argv)
         char line[256];config=product_default_config();
         if(!fgets(line,sizeof(line),stdin)||sscanf(line,"C,%lf,%lf,%lf,%lf,%u,%d",&config.mass_g,&config.trial_radius_mm,&config.trial_angle_deg,&config.correction_radius_mm,&config.axis,&config.direction)!=6||!product_config_valid(&config))return 2;
         for(unsigned i=0;i<4;++i){int err=dataset(i);if(err)return err;}
-        if(!product_solve_runs(&config,&runs[0],&runs[1],&result))return 4;
+        if(!(timed?assess_pair(4):product_solve_runs(&config,&runs[0],&runs[1],&result)))return 4;
         product_repeat_observation_t o;product_observe_repeat(&config,&runs[2],&runs[3],&result,&o);
         printf("{\"kind\":\"shared_C_same_condition_repeat_observation\",\"state\":\"%s\",\"previous_capture_id\":%u,\"current_capture_id\":%u,\"matched_turns\":%u,\"phase_available\":%s,\"previous_peak_mps2\":%.17g,\"current_peak_mps2\":%.17g,\"amplitude_change_percent\":%.17g,\"phase_change_deg\":%.17g,\"reason\":\"%s\",\"lower_rpm\":%.17g,\"upper_rpm\":%.17g,\"accuracy_validated\":false}\n",
             product_repeat_state_name(o.state),o.previous_capture_id,runs[3].summary.capture_id,o.matched_turns,o.phase_available?"true":"false",o.previous_peak,o.current_peak,o.amplitude_change_percent,o.phase_change_deg,product_reason_name(o.reason),result.lower_rpm,result.upper_rpm);return 0;
@@ -152,9 +172,7 @@ int main(int argc,char **argv)
     if(simulated)demo();else{char line[256];config=product_default_config();
         if(!fgets(line,sizeof(line),stdin)||sscanf(line,"C,%lf,%lf,%lf,%lf,%u,%d",&config.mass_g,&config.trial_radius_mm,&config.trial_angle_deg,&config.correction_radius_mm,&config.axis,&config.direction)!=6||!product_config_valid(&config))return 2;
         for(unsigned i=0;i<(pair_only?2U:3U);++i){int err=dataset(i);if(err)return err;}}
-    if(auto_solve){unsigned chosen=config.axis;(void)product_assess_axes(&config,all_axes[0],all_axes[1],&chosen,&result,&assessment);
-        config.axis=chosen;runs[0]=all_axes[0][chosen];runs[1]=all_axes[1][chosen];if(!pair_only)runs[2]=all_axes[2][chosen];}
-    else (void)product_assess_runs(&config,&runs[0],&runs[1],&result,&assessment);
+    (void)assess_pair(pair_only?2:3);
     if(result.calculation_valid&&!pair_only)(void)product_compare_runs(&config,&runs[0],&runs[2],&result,&comparison);
     output(simulated||input_synthetic,pair_only?2:3);return 0;
 }

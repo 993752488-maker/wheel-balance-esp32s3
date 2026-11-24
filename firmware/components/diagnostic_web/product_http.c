@@ -169,6 +169,7 @@ static void serialize_speed(cJSON *parent,const product_snapshot_t *s,const prod
     cJSON_AddStringToObject(o,"metric","RMS_of_per_turn_1x_peak_magnitudes_mps2");
     cJSON_AddStringToObject(o,"spread","per_turn_min_max_not_noise_or_confidence");
     cJSON_AddNumberToObject(o,"bin_width_rpm",PRODUCT_SPEED_WIDTH);
+    cJSON_AddNumberToObject(o,"max_rpm_exclusive",PRODUCT_TIMED_MAX_RPM_EXCLUSIVE);
     cJSON_AddStringToObject(o,"reason",valid?"NONE":"NOT_RECORDED_OR_CONTEXT_MISMATCH");
     if(!valid)return;
     cJSON_AddNumberToObject(o,"session_id",v->session_id);cJSON_AddNumberToObject(o,"snapshot_revision",v->snapshot_revision);
@@ -185,8 +186,9 @@ static void serialize_speed(cJSON *parent,const product_snapshot_t *s,const prod
         cJSON *points=cJSON_AddArrayToObject(p,"points");
         for(unsigned i=0;i<PRODUCT_SPEED_BINS;++i){const product_speed_bin_t *b=&a->bins[i];if(!b->count)continue;
             cJSON *row=cJSON_CreateObject();cJSON_AddItemToArray(points,row);
-            cJSON_AddNumberToObject(row,"lower_rpm",(i+1)*PRODUCT_SPEED_WIDTH);
-            cJSON_AddNumberToObject(row,"upper_rpm",(i+2)*PRODUCT_SPEED_WIDTH);
+            const unsigned lower=product_speed_lower_rpm(a,i);
+            cJSON_AddNumberToObject(row,"lower_rpm",lower);
+            cJSON_AddNumberToObject(row,"upper_rpm",lower+PRODUCT_SPEED_WIDTH);
             cJSON_AddNumberToObject(row,"count",b->count);cJSON_AddNumberToObject(row,"rms",b->rms);
             cJSON_AddNumberToObject(row,"low",b->minimum);cJSON_AddNumberToObject(row,"high",b->maximum);
         }
@@ -196,21 +198,34 @@ static void serialize_window(cJSON *parent,const product_snapshot_t *s,const pro
 {
     cJSON *o=cJSON_AddObjectToObject(parent,"capture_flow");const bool valid=product_window_valid(w,s,s->historical);
     const bool whole=valid&&w->schema==2;
+    const bool steady_record=whole&&w->capture.mode==CAPTURE_TIMED&&product_06_protocol(s->firmware,9);
+    const bool automatic_duration=steady_record&&!w->capture.seconds;
     cJSON_AddBoolToObject(o,"available",valid);cJSON_AddNumberToObject(o,"schema_version",valid?w->schema:0);
     cJSON_AddBoolToObject(o,"hand_release_confirmed",false);cJSON_AddBoolToObject(o,"motor_state_verified",false);
-    cJSON_AddStringToObject(o,"policy",!valid?"unavailable":whole?"whole_record_settling_then20RPM_stratified_time_coverage96_v2":"per_axis_3_structural_turns_1500ms_after_detected_disturbance_recent64_v1");
+    cJSON_AddStringToObject(o,"policy",!valid?"unavailable":
+        steady_record?"timed_steady_start_then_operating_speed_20RPM_stratified_time_coverage96":
+        whole?"whole_record_settling_then20RPM_stratified_time_coverage96_v2":"per_axis_3_structural_turns_1500ms_after_detected_disturbance_recent64_v1");
     cJSON_AddStringToObject(o,"steady_policy","5_turns_bounded3pct_alternating_ripple_slope0.3pct_not_drive_state_proof");
     cJSON_AddStringToObject(o,"stop_policy",!valid?"unavailable":whole?
-        (w->capture.mode==CAPTURE_TIMED?"fixed_record_duration_or_explicit_operator":"reference_silence8to12seconds_or_explicit_operator_no_count_target_120second_limit_no_result"):
+        (w->capture.mode==CAPTURE_TIMED?(automatic_duration?"duration_from_operating_rpm":"fixed_record_duration_or_explicit_operator"):
+            "reference_silence8to12seconds_or_explicit_operator_no_count_target_120second_limit_no_result"):
         "12_structural_turns_6seconds_3_common_pairs_or_stop_or60seconds");
     if(valid&&!whole)cJSON_AddNumberToObject(o,"target_turns",12);
     cJSON_AddBoolToObject(o,"stop_observation_required",whole&&w->capture.mode==CAPTURE_COAST);
-    cJSON_AddNumberToObject(o,"max_record_seconds",whole?(w->capture.mode==CAPTURE_TIMED?w->capture.seconds:PRODUCT_CAPTURE_MAX_MS/1000):60);
+    cJSON_AddNumberToObject(o,"max_record_seconds",whole?(w->capture.mode==CAPTURE_TIMED?(automatic_duration?60:w->capture.seconds):PRODUCT_CAPTURE_MAX_MS/1000):60);
     cJSON_AddNumberToObject(o,"retained_turn_limit",whole?PRODUCT_WINDOW_KEEP:64);
-    if(whole){const char *types[]={"bicycle","electric","other"};
+    /* The active settings remain known even if the per-stage window is unavailable. */
+    if(product_window_has_capture_settings(w,s)){const char *types[]={"bicycle","electric","other"};
         cJSON_AddStringToObject(o,"vehicle_type",types[w->capture.vehicle_type]);
         cJSON_AddStringToObject(o,"mode",w->capture.mode==CAPTURE_TIMED?"timed":"coast");
         cJSON_AddNumberToObject(o,"duration_seconds",w->capture.seconds);
+        cJSON_AddBoolToObject(o,"automatic_duration",automatic_duration);
+        const double target=s->stage==PRODUCT_RETEST?s->solution.mean_rpm:product_capture_baseline_rpm(&s->stages[0]);
+        number(o,"comparison_target_rpm",target,automatic_duration&&isfinite(target)&&target>0);
+        cJSON_AddNumberToObject(o,"start_min_rpm",PRODUCT_MIN_RPM);
+        cJSON_AddNumberToObject(o,"start_max_rpm_exclusive",product_06_protocol(s->firmware,9)?
+            product_capture_max_rpm(w->capture.mode):PRODUCT_COAST_MAX_RPM_EXCLUSIVE);}
+    if(whole){
         cJSON_AddStringToObject(o,"pairing_policy",product_06_protocol(s->firmware,6)?
             "chronological_max_pairs_3pct_original_band":"common_RPM_tail_first_then_chronological_complex_average");}
     if(!valid)return;
@@ -225,6 +240,7 @@ static void serialize_window(cJSON *parent,const product_snapshot_t *s,const pro
         cJSON_AddStringToObject(r,"phase",phases[phase]);cJSON_AddStringToObject(r,"motion",modes[v->mode]);
         const char *ends[]={"not_recorded","reference_silence","operator_finish","capture_limit","timed_duration"};
         cJSON_AddStringToObject(r,"end_reason",whole?ends[v->end_reason]:"not_recorded");
+        number(r,"planned_seconds",v->planned_seconds,whole&&v->planned_seconds>0);
         cJSON_AddNumberToObject(r,"capture_id",v->capture_id);cJSON_AddNumberToObject(r,"epoch",v->epoch);
         cJSON_AddNumberToObject(r,"start_us",(double)v->start_us);cJSON_AddNumberToObject(r,"end_us",(double)v->end_us);
         cJSON_AddNumberToObject(r,"updated_us",(double)v->updated_us);cJSON_AddNumberToObject(r,"total_turns",v->total_turns);
@@ -258,7 +274,9 @@ static cJSON *serialize(const product_snapshot_t *s,const product_trial_guide_t 
     const bool guide_ok=product_trial_valid(trial,s);
     cJSON_AddNumberToObject(guide,"schema_version",guide_ok?trial->schema:0);cJSON_AddBoolToObject(guide,"available",guide_ok);
     if(guide_ok){product_trial_advice_t advice;product_trial_advice(trial,s,&advice);
-        cJSON_AddStringToObject(guide,"policy","baseline_first_two_pieces_max3_attempts_projection2x_variation_bounded_not_safety_limit");
+        cJSON_AddStringToObject(guide,"policy",trial->schema>=4?"rpm_radius_pilot_quantized_response_or_opposite_comparison_v1":product_06_protocol(s->firmware,11)?
+            "baseline_first_coherent_weak_increase_or_lighter_conflict_comparison_v1":
+            "baseline_first_two_pieces_max3_attempts_projection2x_variation_bounded_not_safety_limit");
         cJSON_AddNumberToObject(guide,"snapshot_revision",trial->snapshot_revision);
         cJSON *axis=cJSON_AddObjectToObject(guide,"axis_selection");
         cJSON_AddStringToObject(axis,"mode",trial->automatic_axis?"auto":"manual");
@@ -270,15 +288,18 @@ static cJSON *serialize(const product_snapshot_t *s,const product_trial_guide_t 
         cJSON_AddStringToObject(guide,"plan_source",product_trial_source_name(trial->source));
         cJSON_AddNumberToObject(guide,"piece_mass_g",trial->piece_mass_g);cJSON_AddNumberToObject(guide,"planned_mass_g",s->config.mass_g);
         cJSON_AddNumberToObject(guide,"initial_mass_g",trial->initial_mass_g);
+        number(guide,"initial_angle_deg",trial->initial_angle_deg,trial->schema>=4);
         cJSON_AddNumberToObject(guide,"attempt_count",trial->count);cJSON_AddNumberToObject(guide,"max_attempts",PRODUCT_TRIAL_ATTEMPTS);
         cJSON_AddBoolToObject(guide,"editable",advice.editable);cJSON_AddBoolToObject(guide,"retry_available",advice.retry_available);
         cJSON_AddStringToObject(guide,"next_reason",product_trial_next_name(advice.reason));number(guide,"suggested_mass_g",advice.mass_g,advice.suggested);
+        number(guide,"suggested_angle_deg",advice.angle_deg,advice.suggested);
         cJSON_AddStringToObject(guide,"mass_confirmation","operator_confirms_total_added_trial_mass_before_each_capture");
         cJSON *attempts=cJSON_AddArrayToObject(guide,"attempts");
         for(unsigned i=0;i<trial->count;++i){const product_trial_attempt_t *a=&trial->attempts[i];cJSON *t=cJSON_CreateObject();cJSON_AddItemToArray(attempts,t);
             cJSON_AddNumberToObject(t,"index",i+1);cJSON_AddNumberToObject(t,"mass_g",a->mass_g);
             number(t,"axis",a->axis,trial->schema>=3);
-            cJSON_AddNumberToObject(t,"radius_mm",s->config.trial_radius_mm);cJSON_AddNumberToObject(t,"angle_deg",s->config.trial_angle_deg);
+            cJSON_AddNumberToObject(t,"radius_mm",s->config.trial_radius_mm);
+            cJSON_AddNumberToObject(t,"angle_deg",trial->schema>=4?trial->attempt_angle_deg[i]:s->config.trial_angle_deg);
             cJSON_AddStringToObject(t,"plan_source",product_trial_source_name(a->source));cJSON_AddBoolToObject(t,"operator_confirmed_installed",true);
             cJSON_AddNumberToObject(t,"capture_id",a->stage.capture_id);cJSON_AddNumberToObject(t,"epoch",a->stage.epoch);
             cJSON_AddNumberToObject(t,"baseline_capture_id",s->stages[0].capture_id);
@@ -292,7 +313,9 @@ static cJSON *serialize(const product_snapshot_t *s,const product_trial_guide_t 
             number(t,"lower_rpm",a->solution.lower_rpm,a->solution.matched_turns>0);number(t,"upper_rpm",a->solution.upper_rpm,a->solution.matched_turns>0);
             number(t,"delta_peak",a->solution.delta_peak,a->solution.matched_turns>0);
             number(t,"delta_coherence",a->solution.delta_coherence,a->solution.matched_turns>0);
-            number(t,"mean_variation_scale",a->solution.mean_noise_scale,a->solution.matched_turns>0);}
+            number(t,"mean_variation_scale",a->solution.mean_noise_scale,a->solution.matched_turns>0);
+            number(t,"h_real",a->solution.calculation.influence.real,a->solution.calculation_valid);
+            number(t,"h_imag",a->solution.calculation.influence.imag,a->solution.calculation_valid);}
     }
     cJSON *stages=cJSON_AddArrayToObject(o,"stages");
     for(unsigned i=0;i<3;++i){const product_stage_summary_t *v=&s->stages[i];cJSON *t=cJSON_CreateObject();cJSON_AddItemToArray(stages,t);
@@ -312,6 +335,11 @@ static cJSON *serialize(const product_snapshot_t *s,const product_trial_guide_t 
     cJSON_AddBoolToObject(r,"can_start_retest",guide_allowed&&product_retest_available(s));
     cJSON_AddBoolToObject(r,"no_correction_required",guide_allowed&&v->calculation_valid&&v->reason==PRODUCT_REASON_NONE&&v->calculation.mass_g==0);
     cJSON_AddBoolToObject(r,"accuracy_validated",false);cJSON_AddStringToObject(r,"reason",product_reason_name(v->reason));
+    const product_trial_attempt_t *measured=guide_ok&&trial->count?&trial->attempts[trial->count-1]:NULL;
+    const bool trial_source_valid=measured&&measured->stage.capture_id==s->stages[1].capture_id&&v->matched_turns>0;
+    number(r,"trial_capture_id",s->stages[1].capture_id,trial_source_valid);
+    number(r,"trial_mass_g",trial_source_valid?measured->mass_g:0,trial_source_valid);
+    number(r,"trial_angle_deg",trial_source_valid&&trial->schema>=4?trial->attempt_angle_deg[trial->count-1]:s->config.trial_angle_deg,trial_source_valid);
     cJSON_AddNumberToObject(r,"matched_turns",v->matched_turns);number(r,"lower_rpm",v->lower_rpm,v->matched_turns>0);
     number(r,"upper_rpm",v->upper_rpm,v->matched_turns>0);number(r,"mean_rpm",v->mean_rpm,v->calculation_valid);
     number(r,"mass_g",v->calculation.mass_g,v->calculation_valid);number(r,"angle_deg",v->calculation.angle_deg,v->engineering_available&&guide_allowed);
@@ -415,7 +443,8 @@ static esp_err_t post(httpd_req_t *req)
         if(valid&&r.action==PRODUCT_NEW){cJSON *c=cJSON_GetObjectItemCaseSensitive(root,"config");double axis;
             const cJSON *capture=cJSON_GetObjectItemCaseSensitive(root,"capture_settings");
             if(capture){const cJSON *type=cJSON_GetObjectItemCaseSensitive(capture,"vehicle_type"),*mode=cJSON_GetObjectItemCaseSensitive(capture,"mode");double seconds;
-                valid=cJSON_IsObject(capture)&&cJSON_IsString(type)&&cJSON_IsString(mode)&&numeric(capture,"duration_seconds",&seconds)&&seconds>=10&&seconds<=60&&floor(seconds)==seconds;
+                valid=cJSON_IsObject(capture)&&cJSON_IsString(type)&&cJSON_IsString(mode)&&numeric(capture,"duration_seconds",&seconds)&&
+                    (seconds==0||(seconds>=10&&seconds<=60&&floor(seconds)==seconds));
                 const char *types[]={"bicycle","electric","other"};bool type_found=false;
                 if(valid)for(unsigned i=0;i<3;++i)if(!strcmp(type->valuestring,types[i])){r.capture.vehicle_type=i;type_found=true;break;}
                 valid=valid&&type_found&&(!strcmp(mode->valuestring,"coast")||!strcmp(mode->valuestring,"timed"));
@@ -436,7 +465,7 @@ static esp_err_t post(httpd_req_t *req)
             if(valid&&guide){cJSON *mode=cJSON_GetObjectItemCaseSensitive(guide,"mode");
                 valid=cJSON_IsString(mode)&&(!strcmp(mode->valuestring,"guided")||!strcmp(mode->valuestring,"manual"))&&
                     numeric(guide,"piece_mass_g",&r.piece_mass_g)&&r.piece_mass_g>=.1&&r.piece_mass_g<=500;
-                if(valid)r.guided=!strcmp(mode->valuestring,"guided");}}
+                if(valid){r.guided=!strcmp(mode->valuestring,"guided");valid=!r.guided||r.piece_mass_g<=PRODUCT_GUIDED_TRIAL_MAX_G;}}}
     }
     cJSON_Delete(root);if(!valid)return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"invalid session command");
     return reply(req,product_session_submit(&r),false);

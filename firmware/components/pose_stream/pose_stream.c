@@ -18,12 +18,13 @@ static atomic_uint s_queue_drops,s_tx_drops;
 static void worker(void *arg)
 {
     (void)arg;event_t event;char line[512];
-    serial_console_printf("POSE_META source=live_device boot_id=%s firmware=%s dlpf_cfg=6 nominal_bandwidth_hz=5 accel_lsb_g=8192 gyro_lsb_dps=131 timing=register_read_bracket qualified=0\n",s_boot,esp_app_get_description()->version);
+    serial_console_printf("POSE_META source=live_device boot_id=%s firmware=%s dlpf_cfg=%d nominal_bandwidth_hz=%d accel_lsb_g=8192 gyro_lsb_dps=131 timing=register_read_bracket qualified=0\n",
+        s_boot,esp_app_get_description()->version,CONFIG_MPU6050_DLPF_CFG,CONFIG_MPU6050_DLPF_BANDWIDTH_HZ);
     for(;;) {
         if(xQueueReceive(s_queue,&event,portMAX_DELAY)!=pdTRUE)continue;
         const pose_observation_t *v=&event.value;
-        const int n=snprintf(line,sizeof(line),"POSE source=live_device boot_id=%s cfg=6 seq=%" PRIu64 " epoch=%" PRIu32 " begin_us=%" PRIu64 " end_us=%" PRIu64 " ax=%d ay=%d az=%d temp=%d gx=%d gy=%d gz=%d fifo_seq=%" PRIu64 " frame_ok=%d q_drop=%u tx_drop=%u qualified=0\n",
-            s_boot,event.sequence,v->epoch,v->read_begin_us,v->read_end_us,
+        const int n=snprintf(line,sizeof(line),"POSE source=live_device boot_id=%s cfg=%d seq=%" PRIu64 " epoch=%" PRIu32 " begin_us=%" PRIu64 " end_us=%" PRIu64 " ax=%d ay=%d az=%d temp=%d gx=%d gy=%d gz=%d fifo_seq=%" PRIu64 " frame_ok=%d q_drop=%u tx_drop=%u qualified=0\n",
+            s_boot,CONFIG_MPU6050_DLPF_CFG,event.sequence,v->epoch,v->read_begin_us,v->read_end_us,
             (int)v->accel[0],(int)v->accel[1],(int)v->accel[2],(int)v->temperature,
             (int)v->gyro[0],(int)v->gyro[1],(int)v->gyro[2],v->fifo_sequence,v->frame_consistent,
             (unsigned)atomic_load(&s_queue_drops),(unsigned)atomic_load(&s_tx_drops));

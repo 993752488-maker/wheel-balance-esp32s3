@@ -9,7 +9,7 @@ typedef enum { WINDOW_UNDETERMINED,WINDOW_STEADY,WINDOW_COAST,WINDOW_MIXED } pro
 typedef struct {
     uint32_t capture_id,epoch,total_turns,accelerating_turns,mode,phase,collecting_mask,common_pairs;
     uint32_t usable[3],skipped[3],transient[3];
-    uint32_t end_reason; /* Schema 2 uses the former 4-byte alignment padding. */
+    uint16_t end_reason,planned_seconds; /* The high half of the former end_reason was zero. */
     uint64_t first_usable_us[3],last_usable_us[3];
     uint64_t start_us,end_us,updated_us;
 } product_window_stage_t;
@@ -25,7 +25,10 @@ typedef struct {
  * final replay, all three axes, independent of trial response or improvement.
  * Detected startup/transients are excluded; hand release is not proven. */
 void product_window_select(selection_turn_t *,size_t,product_window_stage_t *);
+void product_window_select_timed(selection_turn_t *,size_t,double target_rpm,product_window_stage_t *);
+void product_window_configure_fit(selection_config_t *,product_capture_mode_t);
 void product_window_bind(product_window_t *,const product_snapshot_t *);
-void product_window_reset(product_window_t *,const product_snapshot_t *);
+void product_window_reset(product_window_t *,const product_snapshot_t *,product_capture_config_t);
 void product_window_clear(product_window_t *,unsigned);
+bool product_window_has_capture_settings(const product_window_t *,const product_snapshot_t *);
 bool product_window_valid(const product_window_t *,const product_snapshot_t *,bool stored);

@@ -2,6 +2,8 @@
 #include <math.h>
 #include <string.h>
 
+_Static_assert(sizeof(product_speed_t)==880,"speed sidecar ABI changed");
+
 void product_speed_bind(product_speed_t *v,const product_snapshot_t *s)
 {
     if(!v||!s)return;
@@ -20,13 +22,15 @@ bool product_speed_set(product_speed_t *v,unsigned stage,const product_run_t *r,
     o->start_us=r->summary.start_us;o->end_us=r->summary.end_us;o->updated_us=updated;
     o->rejected_turns=r->summary.rejected_turns;
     if(!r->summary.captured||!r->summary.integrity_valid||!o->capture_id||!o->epoch||r->count>PRODUCT_MAX_TURNS)return false;
+    const unsigned first=product_band_origin(r);
+    if(first!=PRODUCT_MIN_RPM)o->first_band_rpm=(uint16_t)first;
     double energy[PRODUCT_SPEED_BINS]={0};
     for(size_t i=0;i<r->count;++i){const product_turn_t *t=&r->turns[i];
         if(!isfinite(t->rpm)||t->rpm<=0||!isfinite(t->real)||!isfinite(t->imag))goto invalid;
         const double amplitude=hypot(t->real,t->imag);
         if(!isfinite(amplitude)||amplitude>1e6)goto invalid;
-        if(t->rpm<PRODUCT_SPEED_WIDTH||t->rpm>=PRODUCT_SPEED_WIDTH*(PRODUCT_SPEED_BINS+1)){++o->outside_turns;continue;}
-        const unsigned index=(unsigned)(t->rpm/PRODUCT_SPEED_WIDTH)-1;
+        if(t->rpm<first||t->rpm>=first+PRODUCT_SPEED_WIDTH*PRODUCT_SPEED_BINS){++o->outside_turns;continue;}
+        const unsigned index=((unsigned)t->rpm-first)/PRODUCT_SPEED_WIDTH;
         product_speed_bin_t *b=&o->bins[index];
         if(!b->count){b->minimum=(float)amplitude;b->maximum=(float)amplitude;}
         else{if(amplitude<b->minimum)b->minimum=(float)amplitude;if(amplitude>b->maximum)b->maximum=(float)amplitude;}
@@ -45,6 +49,9 @@ bool product_speed_valid(const product_speed_t *v,const product_snapshot_t *s,bo
        v->axis!=s->config.axis||v->simulated!=s->simulated||memcmp(v->boot_id,s->boot_id,sizeof(v->boot_id)))return false;
     for(unsigned stage=0;stage<3;++stage){const product_speed_stage_t *a=&v->stages[stage];
         if(a->mode>SPEED_INVALID)return false;
+        const unsigned first=product_speed_lower_rpm(a,0);
+        if(first<PRODUCT_MIN_RPM||first>PRODUCT_TIMED_MAX_RPM_EXCLUSIVE-PRODUCT_SPEED_WIDTH*PRODUCT_SPEED_BINS||
+           first%PRODUCT_SPEED_WIDTH||a->outside_turns>PRODUCT_MAX_TURNS)return false;
         if(a->mode==SPEED_PREVIEW&&(stored||s->historical||
            (s->state!=PRODUCT_RECORDING&&s->state!=PRODUCT_PROCESSING)||s->stage!=stage))return false;
         if(a->mode==SPEED_FROZEN&&(!s->stages[stage].captured||!s->stages[stage].integrity_valid||

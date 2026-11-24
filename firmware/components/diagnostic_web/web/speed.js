@@ -9,6 +9,8 @@
     if(!s||!p||p.available!==true||p.schema_version!==1||p.metric!=='RMS_of_per_turn_1x_peak_magnitudes_mps2'||
        p.session_id!==s.id||p.snapshot_revision!==s.revision||p.boot_id!==s.boot_id||p.axis!==s.config.axis||p.source!==s.source||
        !Number.isSafeInteger(p.generation)||p.generation<0||!Array.isArray(p.stages)||p.stages.length!==3)return false;
+    const maxRpm=p.max_rpm_exclusive??300;
+    if(!Number.isInteger(maxRpm)||maxRpm<40||maxRpm%20)return false;
     return p.stages.every((a,i)=>{
       if(!a||!['empty','preview','frozen','invalid'].includes(a.state)||!Array.isArray(a.points)||a.points.length>14)return false;
       if(a.state==='preview'&&(s.historical||!['RECORDING','PROCESSING'].includes(s.state)||s.stage!==i))return false;
@@ -16,7 +18,7 @@
          a.start_us!==s.stages[i].start_us||a.end_us!==s.stages[i].end_us))return false;
       if(a.points.length&&!['preview','frozen'].includes(a.state))return false;
       const bins=new Set();let count=0;
-      for(const b of a.points){if(!b||!Number.isInteger(b.lower_rpm)||b.lower_rpm<20||b.lower_rpm>=300||b.lower_rpm%20||b.upper_rpm!==b.lower_rpm+20||
+      for(const b of a.points){if(!b||!Number.isInteger(b.lower_rpm)||b.lower_rpm<20||b.lower_rpm>=maxRpm||b.lower_rpm%20||b.upper_rpm!==b.lower_rpm+20||
           bins.has(b.lower_rpm)||!Number.isInteger(b.count)||b.count<1||b.count>96||
           ![b.rms,b.low,b.high].every(Number.isFinite)||b.low<0||b.high<b.low||b.rms<0||b.rms>1e6||
           b.rms<b.low-1e-5||b.rms>b.high+1e-5)return false;bins.add(b.lower_rpm);count+=b.count;}

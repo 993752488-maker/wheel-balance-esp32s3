@@ -26,13 +26,14 @@ static product_run_t *previous_retest;
 static uint32_t previous_retest_group,synthetic_sequence;
 static product_retest_condition_t pending_retest_condition;
 static product_config_t real_config;
-static product_capture_config_t real_capture_config={.mode=CAPTURE_COAST,.vehicle_type=CAPTURE_BICYCLE,.seconds=30};
+static product_capture_config_t real_capture_config={.mode=CAPTURE_COAST,.vehicle_type=CAPTURE_BICYCLE};
 /* Worker-owned analysis windows need no DMA or ISR access. Keep the network's
  * internal heap available rather than reserving these large arrays in DRAM. */
 static product_run_t *runs;
 static product_run_t *baseline_axes,*trial_axes;
 static product_assessment_t *assessment,*published_assessment,*history_assessments;
 static bool axis_finalized;
+static uint32_t retry_required_axes;
 static product_speed_t *speed,*published_speed,*history_speeds;
 static product_window_t *windows,*published_windows,*history_windows;
 static uint64_t preview_last_us;
@@ -69,7 +70,10 @@ void product_session_get_assessment_view(product_snapshot_t *out,product_trial_g
     if(trial)*trial=published_guide;
     if(saved_retests)*saved_retests=published_retests;
     if(profile)*profile=*published_speed;
-    if(window)*window=*published_windows;
+    if(window){
+        if(published_windows)*window=*published_windows;
+        else memset(window,0,sizeof(*window));
+    }
     if(quality)*quality=*published_assessment;
     portEXIT_CRITICAL(&lock);
 }
@@ -126,8 +130,13 @@ static void store_history(void)
             if(product_window_valid(&history_windows[i],&history[i],true)){
                 if(nvs_set_blob(handle,key,&history_windows[i],sizeof(history_windows[i]))!=ESP_OK)ok=false;
             }else{esp_err_t erased=nvs_erase_key(handle,key);if(erased!=ESP_OK&&erased!=ESP_ERR_NVS_NOT_FOUND)ok=false;}}
-        if(!current.simulated && nvs_set_blob(handle,"config",&current.config,sizeof(current.config))!=ESP_OK)ok=false;
-        if(!current.simulated && nvs_set_blob(handle,"capture_config",&windows->capture,sizeof(windows->capture))!=ESP_OK)ok=false;
+        if(!current.simulated){
+            product_config_t preferences=current.config;
+            if(guide.schema>=4)preferences.trial_angle_deg=guide.initial_angle_deg;
+            if(nvs_set_blob(handle,"config",&preferences,sizeof(preferences))!=ESP_OK)ok=false;
+            if(nvs_set_blob(handle,"trial_piece_g",&guide.piece_mass_g,sizeof(guide.piece_mass_g))!=ESP_OK)ok=false;
+            if(nvs_set_blob(handle,"capture_config",&real_capture_config,sizeof(real_capture_config))!=ESP_OK)ok=false;
+        }
         if(nvs_commit(handle)!=ESP_OK)ok=false;
         nvs_close(handle);}
     if(paused&&ok){
@@ -169,9 +178,9 @@ static void fresh(const product_config_t *config,bool simulated)
     memcpy(current.boot_id,boot,sizeof(boot));memcpy(current.firmware,fw,sizeof(fw));
     current.config=*config;current.simulated=simulated;current.state=PRODUCT_IDLE;current.storage_ok=true;
     product_speed_reset(speed,&current);preview_last_us=0;
-    product_window_reset(windows,&current);product_assessment_reset(assessment,&current);axis_finalized=false;
+    const product_capture_config_t capture=simulated?product_capture_default():real_capture_config;
+    product_window_reset(windows,&current,capture);product_assessment_reset(assessment,&current);axis_finalized=false;retry_required_axes=0;
     memset(baseline_axes,0,3*sizeof(*baseline_axes));memset(trial_axes,0,3*sizeof(*trial_axes));
-    if(!simulated)windows->capture=real_capture_config;
     if(!simulated){portENTER_CRITICAL(&lock);real_config=*config;portEXIT_CRITICAL(&lock);}
     memset(&guide,0,sizeof(guide));
     if(!simulated)(void)product_trial_init(&guide,&current,5,false);
@@ -192,7 +201,7 @@ static void terminal(product_state_t state,product_reason_t reason)
     product_window_stage_t *w=&windows->stages[current.stage];const product_stage_summary_t *source=&current.stages[current.stage];
     if(w->capture_id&&source->capture_id==w->capture_id&&source->end_us){w->start_us=source->start_us;w->end_us=source->end_us;w->phase=WINDOW_COMPLETE;w->end_reason=job.end_reason;}
     else if(w->capture_id)product_window_clear(windows,current.stage);
-    (void)product_trial_record(&guide,&current);
+    if(product_trial_record(&guide,&current))product_trial_apply_advice(&guide,&current);
     if(current.stage==PRODUCT_RETEST&&current.stages[2].capture_id){
         product_repeat_observation_t observation={0};
         const uint32_t group=retests.count?retests.entries[retests.count-1].correction_group:0;
@@ -209,9 +218,7 @@ static void terminal(product_state_t state,product_reason_t reason)
 static bool reference_ok(const optical_ref_status_t *r)
 {return r->enabled&&!r->input_queue_drops&&!r->clock_faults&&!r->sample_gaps;}
 static void yield_analysis(void *context){(void)context;vTaskDelay(1);}
-/* Replay the frozen whole record only after reference-silence or an explicit
- * operator finish. No fit, sufficient-circle target or improvement can end
- * an active recording. */
+/* Replay the frozen record after the selected capture policy ends it. */
 static bool replay_window(const raw_status_t *raw,size_t *selected)
 {
     bool ok=raw->samples<=REPLAY_CAPACITY&&raw->references<=COAST_SELECTION_MAX_REFS;
@@ -234,16 +241,19 @@ static bool replay_window(const raw_status_t *raw,size_t *selected)
     ok=ok&&clock_core->count&&clock_core->count<=raw->samples&&raw->samples-clock_core->count<32&&
         !clock_core->status.timing_resets&&clock_core->last_sequence==raw->last_sequence&&live_core_retime(clock_core);
     *selected=0;
-    if(ok){const selection_config_t cfg=selection_default_config();
-        selection_config_t fit=cfg;fit.fit.acceleration_tolerance=.03;
+    if(ok){selection_config_t fit=selection_default_config();
+        product_window_configure_fit(&fit,job.capture.mode);
         ok=coast_select_progress(&fit,clock_core->samples,clock_core->count,references,nr,
             (sync_quality_t){SYNC_TIME_ESTIMATED,0},selection,COAST_SELECTION_MAX_REFS-2,selected,yield_analysis,NULL)==SELECTION_OK;}
     return ok;
 }
 static void select_window(const raw_status_t *raw,size_t count,bool final)
 {
-    product_window_stage_t *w=&windows->stages[current.stage];product_window_select(selection,count,w);
+    product_window_stage_t *w=&windows->stages[current.stage];
+    if(job.capture.mode==CAPTURE_TIMED)product_window_select_timed(selection,count,job.target_rpm,w);
+    else product_window_select(selection,count,w);
     w->capture_id=raw->id;w->epoch=raw->first_epoch;w->start_us=raw->start_us;
+    w->planned_seconds=job.capture.mode==CAPTURE_TIMED?job.capture.seconds:0;
     w->end_us=final?raw->end_us:clock_core->samples[clock_core->count-1].time_us;
     w->updated_us=(uint64_t)esp_timer_get_time();if(final){w->phase=WINDOW_COMPLETE;w->end_reason=job.end_reason;}
     ++windows->generation;
@@ -256,6 +266,7 @@ static void preview_capture(uint64_t now,const raw_status_t *seen)
     preview_last_us=now;
     product_window_stage_t *w=&windows->stages[current.stage];memset(w,0,sizeof(*w));
     w->capture_id=seen->id;w->epoch=seen->first_epoch;w->start_us=seen->start_us;
+    w->planned_seconds=job.capture.mode==CAPTURE_TIMED?job.capture.seconds:0;
     w->end_us=now;w->updated_us=now;w->phase=WINDOW_COLLECTING;++windows->generation;
     /* Progress updates do not invalidate queued finish/cancel commands. */
     product_speed_bind(speed,&current);product_window_bind(windows,&current);
@@ -286,6 +297,15 @@ static void process_capture(void)
             (void)product_extract_run(selection,selected,axis,&trial_axes[axis]);}
         unsigned chosen=current.config.axis;
         solved_ok=product_assess_axes(&current.config,baseline_axes,trial_axes,&chosen,&current.solution,assessment);solved_here=true;
+        const uint32_t comparable=assessment->axis_available_mask&~assessment->axis_conflict_mask;
+        if(solved_ok&&current.solution.reason==PRODUCT_REASON_NONE&&(comparable&retry_required_axes)!=retry_required_axes){
+            /* A lighter trial must not resolve a conflict by losing axes
+             * that had measurable responses before the load was reduced. */
+            current.solution.engineering_available=false;
+            current.solution.reason=PRODUCT_CONFLICT;
+            assessment->state=ASSESS_VARIABLE;
+            assessment->flags|=ASSESS_AXES_DIFFERENT;
+        }
         if(current.solution.reason==PRODUCT_CONTEXT||current.solution.reason==PRODUCT_NUMERIC||current.solution.reason==PRODUCT_DATA_FAULT){
             ok=false;run->summary.reason=current.solution.reason;
         }else{
@@ -293,7 +313,7 @@ static void process_capture(void)
             current.config.axis=chosen;*run=trial_axes[chosen];runs[0]=baseline_axes[chosen];current.stages[0]=runs[0].summary;
             memcpy(guide.axis_score,assessment->axis_scores,sizeof(guide.axis_score));guide.axis_resolved=true;
             (void)product_speed_set(speed,0,&runs[0],false,(uint64_t)esp_timer_get_time());
-            portENTER_CRITICAL(&lock);real_config=current.config;portEXIT_CRITICAL(&lock);
+            portENTER_CRITICAL(&lock);real_config=current.config;real_config.trial_angle_deg=guide.initial_angle_deg;portEXIT_CRITICAL(&lock);
             ok=run->summary.captured;
         }
     }else if(ok)ok=product_extract_run(selection,selected,current.config.axis,run);
@@ -306,6 +326,12 @@ static void process_capture(void)
     if(!ok){terminal(PRODUCT_NO_RESULT,run->summary.reason);return;}
     if(current.stage==PRODUCT_TRIAL){
         ok=solved_here?solved_ok:product_assess_runs(&current.config,&runs[0],&runs[1],&current.solution,assessment);
+        if(ok&&product_trial_contradicts_previous(&guide,&current)){
+            current.solution.engineering_available=false;
+            current.solution.reason=PRODUCT_CONFLICT;
+            assessment->state=ASSESS_VARIABLE;
+            axis_finalized=false;
+        }
         assessment->automatic_axis=guide.automatic_axis;assessment->axis_finalized=ok&&current.solution.reason!=PRODUCT_CONFLICT;
         if(guide.automatic_axis)memcpy(guide.axis_score,assessment->axis_scores,sizeof(guide.axis_score));
         product_assessment_bind(assessment,&current);
@@ -313,7 +339,10 @@ static void process_capture(void)
     }else if(current.stage==PRODUCT_RETEST){
         ok=product_compare_runs(&current.config,&runs[0],&runs[2],&current.solution,&current.comparison);
         terminal(ok?PRODUCT_COMPLETE:PRODUCT_NO_RESULT,current.comparison.reason);
-    }else {product_assessment_reset(assessment,&current);terminal(PRODUCT_COMPLETE,PRODUCT_REASON_NONE);}
+    }else {
+        (void)product_trial_plan_original(&guide,&current,product_capture_baseline_rpm(&current.stages[0]));
+        product_assessment_reset(assessment,&current);terminal(PRODUCT_COMPLETE,PRODUCT_REASON_NONE);
+    }
 }
 static void synthetic_run(unsigned stage)
 {
@@ -346,8 +375,21 @@ static void command(const product_request_t *request)
             (void)product_job_finish(&job);closing=true;}
         return;}
     if(busy)return;
+    if(request->action==PRODUCT_SET_CAPTURE){
+        if(current.state==PRODUCT_IDLE&&!current.simulated&&!current.historical&&
+           product_capture_config_valid(&request->capture)){
+            real_capture_config=request->capture;
+            product_capture_apply_preset(&real_capture_config);
+            windows->capture=real_capture_config;
+            store_history();
+        }
+        return;
+    }
     if(request->action==PRODUCT_NEW){if(product_config_valid(&request->config)){
-        if(request->capture_config_present){if(!product_capture_config_valid(&request->capture))return;real_capture_config=request->capture;}
+        if(request->capture_config_present){
+            if(!product_capture_config_valid(&request->capture))return;
+            real_capture_config=request->capture;product_capture_apply_preset(&real_capture_config);
+        }
         fresh(&request->config,false);
         (void)product_trial_init(&guide,&current,request->piece_mass_g>0?request->piece_mass_g:5,request->guided);
         guide.automatic_axis=!request->manual_axis;guide.axis_resolved=false;
@@ -387,10 +429,20 @@ static void command(const product_request_t *request)
         pending_retest_condition=condition;}
     acquisition_status_t imu;optical_ref_status_t ref;raw_status_t raw;
     acquisition_get_status(&imu);optical_ref_get_status(&ref);raw_capture_get_status(&raw);
+    const bool extend_record=current.stage==stage&&(current.reason==PRODUCT_TOO_FEW_TURNS||
+        current.reason==PRODUCT_INCONSISTENT||current.reason==PRODUCT_LOW_DIRECTION_COHERENCE);
+    const unsigned previous_seconds=windows->stages[stage].planned_seconds;
+    if(stage==1&&guide.count&&current.reason==PRODUCT_CONFLICT&&
+       (current.config.mass_g<guide.attempts[guide.count-1].mass_g||current.config.trial_angle_deg!=guide.attempt_angle_deg[guide.count-1])&&
+       product_assessment_valid(assessment,&current)&&
+       (assessment->flags&ASSESS_AXES_DIFFERENT)){
+        retry_required_axes|=assessment->axis_available_mask&~assessment->axis_conflict_mask;
+    }
     current.stage=(product_stage_t)stage;
-    if(stage==0){memset(runs,0,3*sizeof(*runs));memset(current.stages,0,sizeof(current.stages));product_speed_reset(speed,&current);product_window_reset(windows,&current);
+    if(stage==0){memset(runs,0,3*sizeof(*runs));memset(current.stages,0,sizeof(current.stages));product_speed_reset(speed,&current);
+        product_window_reset(windows,&current,windows->capture);
         product_retest_init(&retests,&current);memset(previous_retest,0,sizeof(*previous_retest));previous_retest_group=0;}
-    if(stage==0){axis_finalized=false;memset(baseline_axes,0,3*sizeof(*baseline_axes));memset(trial_axes,0,3*sizeof(*trial_axes));guide.axis_resolved=false;memset(guide.axis_score,0,sizeof(guide.axis_score));}
+    if(stage==0){axis_finalized=false;retry_required_axes=0;memset(baseline_axes,0,3*sizeof(*baseline_axes));memset(trial_axes,0,3*sizeof(*trial_axes));guide.axis_resolved=false;memset(guide.axis_score,0,sizeof(guide.axis_score));}
     else{memset(&runs[stage],0,sizeof(runs[stage]));memset(&current.stages[stage],0,sizeof(current.stages[stage]));product_speed_clear(speed,stage);product_window_clear(windows,stage);}
     if(stage==2)memset(&current.comparison,0,sizeof(current.comparison));
     active_capture=0;
@@ -399,8 +451,11 @@ static void command(const product_request_t *request)
     if(!imu.online||!reference_ok(&ref)){terminal(PRODUCT_NO_RESULT,!imu.online?PRODUCT_SENSOR:PRODUCT_REFERENCE);return;}
     if(stage&&imu.epoch!=runs[0].summary.epoch){terminal(PRODUCT_NO_RESULT,PRODUCT_CONTEXT);return;}
     if(raw.state==RAW_RECORDING||raw.state==RAW_CLOSING){terminal(PRODUCT_NO_RESULT,PRODUCT_BUSY);return;}
-    product_job_arm(&job,(uint64_t)esp_timer_get_time(),ref.rpm.accepted_edges,imu.epoch);
-    job.capture=windows->capture;
+    product_job_arm(&job,(uint64_t)esp_timer_get_time(),ref.rpm.accepted_edges,imu.epoch,windows->capture);
+    if(job.capture.mode==CAPTURE_TIMED&&!job.capture.seconds){
+        if(stage)job.reference_rpm=stage==PRODUCT_RETEST?current.solution.mean_rpm:product_capture_baseline_rpm(&current.stages[0]);
+        if(extend_record)job.minimum_seconds=(unsigned)fmin(60,fmax(previous_seconds,product_capture_auto_seconds(job.reference_rpm))+10);
+    }
     i2c_at_arm=imu.i2c_errors;fifo_at_arm=imu.fifo_loss_resets;
     current.state=PRODUCT_ARMED;current.reason=PRODUCT_REASON_NONE;current.armed_us=(uint64_t)esp_timer_get_time();current.deadline_us=job.deadline_us;publish();
 }
@@ -426,7 +481,7 @@ static void worker(void *unused)
             else{terminal(job.state,job.reason);continue;}}
         if(action==JOB_START){const uint32_t duration=job.capture.mode==CAPTURE_TIMED?job.capture.seconds*1000:PRODUCT_CAPTURE_MAX_MS;
             if(raw_capture_begin(duration,RAW_CONTEXT_USER,false)!=ESP_OK){terminal(PRODUCT_NO_RESULT,PRODUCT_BUSY);continue;}
-            raw_capture_get_status(&raw);active_capture=raw.id;closing=false;preview_last_us=now;
+            raw_capture_get_status(&raw);active_capture=raw.id;closing=false;preview_last_us=0;
             product_job_recording(&job,now,ref.rpm.accepted_edges);current.state=PRODUCT_RECORDING;current.deadline_us=job.deadline_us;publish();}
         if(current.state==PRODUCT_RECORDING){
             if(raw.id!=active_capture){terminal(PRODUCT_NO_RESULT,PRODUCT_DATA_FAULT);continue;}
@@ -494,12 +549,17 @@ esp_err_t product_session_start(const char *boot)
                 if(nvs_get_blob(handle,key,&history_windows[history_count],&window_size)!=ESP_OK||window_size!=sizeof(history_windows[history_count])||
                     !product_window_valid(&history_windows[history_count],&saved,true))memset(&history_windows[history_count],0,sizeof(history_windows[history_count]));
                 ++history_count;}}
+        double piece=5,saved_piece;size_t piece_size=sizeof(saved_piece);
+        if(nvs_get_blob(handle,"trial_piece_g",&saved_piece,&piece_size)==ESP_OK&&piece_size==sizeof(saved_piece)&&
+           isfinite(saved_piece)&&saved_piece>=.1&&saved_piece<=PRODUCT_GUIDED_TRIAL_MAX_G)piece=saved_piece;
         product_config_t saved_config;size_t config_size=sizeof(saved_config);
         if(nvs_get_blob(handle,"config",&saved_config,&config_size)==ESP_OK && config_size==sizeof(saved_config)&&product_config_valid(&saved_config)){
             current.config=saved_config;real_config=saved_config;
-            (void)product_trial_init(&guide,&current,5,true);publish();}
+            (void)product_trial_init(&guide,&current,piece,true);publish();}
         product_capture_config_t saved_capture;size_t capture_size=sizeof(saved_capture);
         if(nvs_get_blob(handle,"capture_config",&saved_capture,&capture_size)==ESP_OK&&capture_size==sizeof(saved_capture)&&product_capture_config_valid(&saved_capture)){
+            product_capture_apply_preset(&saved_capture);
+            saved_capture.seconds=0;
             real_capture_config=saved_capture;windows->capture=saved_capture;publish();}
         nvs_close(handle);}
     if(nvs_open_from_partition("wb_meta","assessment",NVS_READONLY,&handle)==ESP_OK){

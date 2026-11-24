@@ -38,7 +38,7 @@ bool product_extract_run(const selection_turn_t *turns,size_t count,unsigned axi
     if(!turns||axis>2||!out->summary.integrity_valid||!out->summary.epoch){out->summary.reason=PRODUCT_DATA_FAULT;return false;}
     for(size_t i=0;i<count;++i){const selection_turn_t *t=&turns[i];const coast_result_t *f=&t->fit;
         if(!f->valid||(t->reasons[axis]&~SELECT_WEAK_PHASE)||f->epoch!=out->summary.epoch||
-           f->rpm<20||f->rpm>=300||!positive(f->rpm_previous)||
+           !(f->rpm>=PRODUCT_MIN_RPM&&f->rpm<PRODUCT_TIMED_MAX_RPM_EXCLUSIVE)||!positive(f->rpm_previous)||
            !isfinite(f->axis[axis].real)||!isfinite(f->axis[axis].imag))continue;
         if(out->count==PRODUCT_MAX_TURNS){out->summary.reason=PRODUCT_DATA_FAULT;return false;}
         out->turns[out->count++]=(product_turn_t){f->rpm,f->rpm_previous,f->axis[axis].real,f->axis[axis].imag,f->ref_last,f->end_us};
@@ -90,7 +90,8 @@ product_reason_t product_match_runs(const product_run_t *a,const product_run_t *
 {
     if(!out)return PRODUCT_CONTEXT;
     out->count=0;
-    if(!context(a,b)||!isfinite(lower)||!isfinite(upper)||lower<20||upper>300||upper<=lower)
+    if(!context(a,b)||!isfinite(lower)||!isfinite(upper)||lower<PRODUCT_MIN_RPM||
+       upper>PRODUCT_TIMED_MAX_RPM_EXCLUSIVE||upper<=lower)
         return PRODUCT_CONTEXT;
     if(!run_finite(a)||!run_finite(b))return PRODUCT_NUMERIC;
     _Static_assert(PRODUCT_MAX_TURNS<=UINT8_MAX+1U,"pair index does not fit");
@@ -113,7 +114,7 @@ product_reason_t product_match_runs(const product_run_t *a,const product_run_t *
                 best=current[j-1];move=SKIP_MEASURED;
             }
             double mismatch;
-            if(within_band&&y->rpm>=20&&y->rpm<300&&pair_mismatch(x,y,&mismatch)){
+            if(within_band&&y->rpm>=PRODUCT_MIN_RPM&&y->rpm<PRODUCT_TIMED_MAX_RPM_EXCLUSIVE&&pair_mismatch(x,y,&mismatch)){
                 pair_score_t matched=previous[j-1];
                 ++matched.count;
                 matched.mismatch+=mismatch;
@@ -168,7 +169,7 @@ static bool solve_pairs(const product_config_t *cfg,uint32_t epoch,
     size_t n,double lower,product_solution_t *out,double *score)
 {
     memset(out,0,sizeof(*out));if(score)*score=0;
-    out->matched_turns=(unsigned)n;out->lower_rpm=lower;out->upper_rpm=lower+20;
+    out->matched_turns=(unsigned)n;out->lower_rpm=lower;out->upper_rpm=lower+PRODUCT_SPEED_WIDTH;
     if(n<MIN_MATCHES){out->reason=PRODUCT_NO_COMMON_SPEED;return false;}
     coherent_result_t x=average(aa,n,epoch),y=average(bb,n,epoch),d=average(dd,n,epoch);
     out->original_peak=x.peak;out->trial_peak=y.peak;out->delta_peak=d.peak;out->delta_coherence=d.direction_coherence;
@@ -216,12 +217,13 @@ bool product_evaluate_matched_band(const product_config_t *cfg,const product_run
     if(!out)return false;
     memset(out,0,sizeof(*out));if(detail)memset(detail,0,sizeof(*detail));
     if(!product_config_valid(cfg)||!context(a,b)||!pairs||pairs->count>PRODUCT_MAX_TURNS||
-        !isfinite(lower)||lower<20||lower>280||fmod(lower,20)!=0){out->reason=PRODUCT_CONTEXT;return false;}
+        !isfinite(lower)||lower<PRODUCT_MIN_RPM||lower>=PRODUCT_TIMED_MAX_RPM_EXCLUSIVE||
+        fmod(lower,PRODUCT_SPEED_WIDTH)!=0){out->reason=PRODUCT_CONTEXT;return false;}
     for(size_t i=0;i<pairs->count;++i)
         if(pairs->turns[i].original>=a->count||pairs->turns[i].measured>=b->count){
             out->reason=PRODUCT_CONTEXT;return false;}
     product_turn_t aa[PRODUCT_MAX_TURNS],bb[PRODUCT_MAX_TURNS],dd[PRODUCT_MAX_TURNS];
-    const size_t n=copy_band_pairs(a,b,pairs,lower,lower+20,aa,bb,dd);
+    const size_t n=copy_band_pairs(a,b,pairs,lower,lower+PRODUCT_SPEED_WIDTH,aa,bb,dd);
     double score=0;const bool ok=solve_pairs(cfg,a->summary.epoch,aa,bb,dd,n,lower,out,&score);
     if(detail){detail->score=score*.75;
         if(n>=MIN_MATCHES){const coherent_result_t original=average(aa,n,a->summary.epoch);
@@ -249,7 +251,7 @@ bool product_evaluate_band(const product_config_t *cfg,const product_run_t *a,co
 {
     if(!out)return false;
     product_pairing_t pairs;
-    const product_reason_t reason=product_match_runs(a,b,20,300,&pairs);
+    const product_reason_t reason=product_match_runs(a,b,PRODUCT_MIN_RPM,PRODUCT_TIMED_MAX_RPM_EXCLUSIVE,&pairs);
     if(reason!=PRODUCT_REASON_NONE){
         memset(out,0,sizeof(*out));out->reason=reason;
         if(detail)memset(detail,0,sizeof(*detail));
@@ -261,10 +263,10 @@ unsigned product_common_turns(const product_run_t *a,const product_run_t *b,doub
 {
     product_pairing_t pairs;
     if(upper>lower)return product_match_runs(a,b,lower,upper,&pairs)==PRODUCT_REASON_NONE?(unsigned)pairs.count:0;
-    if(product_match_runs(a,b,20,300,&pairs)!=PRODUCT_REASON_NONE)return 0;
-    unsigned counts[PRODUCT_ASSESSMENT_BANDS]={0},maximum=0;
+    if(product_match_runs(a,b,PRODUCT_MIN_RPM,PRODUCT_TIMED_MAX_RPM_EXCLUSIVE,&pairs)!=PRODUCT_REASON_NONE)return 0;
+    unsigned counts[PRODUCT_SPEED_BAND_COUNT]={0},maximum=0;
     for(size_t i=0;i<pairs.count;++i){
-        const unsigned band=(unsigned)(a->turns[pairs.turns[i].original].rpm/20)-1U;
+        const unsigned band=((unsigned)a->turns[pairs.turns[i].original].rpm-PRODUCT_MIN_RPM)/PRODUCT_SPEED_WIDTH;
         if(++counts[band]>maximum)maximum=counts[band];
     }
     return maximum;

@@ -23,6 +23,19 @@ static void trial(unsigned capture,product_reason_t reason)
 }
 static bool fresh_mass_is_not_previous_50g(void)
 {CHECK(s.config.mass_g==10&&g.initial_mass_g==10&&g.piece_mass_g==5);CHECK(g.source==TRIAL_PLAN_STARTER);CHECK(product_trial_valid(&g,&s));return true;}
+static bool first_mass_comes_from_rpm_radius_and_piece_size(void)
+{
+    s.config.trial_radius_mm=160;
+    CHECK(product_trial_plan_original(&g,&s,555));
+    CHECK(s.config.mass_g==5&&g.initial_mass_g==5);
+    s.config.trial_radius_mm=270;
+    CHECK(product_trial_init(&g,&s,2,true));
+    CHECK(product_trial_plan_original(&g,&s,180));
+    CHECK(s.config.mass_g==10&&s.config.mass_g/g.piece_mass_g==5);
+    CHECK(product_trial_plan_original(&g,&s,555));
+    CHECK(s.config.mass_g==2);
+    return true;
+}
 static bool baseline_first(void)
 {product_trial_advice_t a;s.stages[0].captured=false;product_trial_advice(&g,&s,&a);CHECK(!a.editable&&a.reason==TRIAL_NEXT_NO_BASELINE);CHECK(!product_trial_set_plan(&g,&s,50,TRIAL_PLAN_MANUAL));return true;}
 static bool actual_confirmation_matches_plan(void)
@@ -38,9 +51,57 @@ static bool supported_projection_is_quantized_and_bounded(void)
 {trial(2,PRODUCT_WEAK_RESPONSE);s.solution.matched_turns=3;s.solution.delta_peak=.01;s.solution.delta_coherence=.65;s.solution.mean_noise_scale=.0068;
  CHECK(product_trial_record(&g,&s));product_trial_advice_t a;product_trial_advice(&g,&s,&a);CHECK(a.retry_available&&a.suggested&&a.mass_g==15);
  CHECK(!product_trial_set_plan(&g,&s,20,TRIAL_PLAN_RESPONSE));CHECK(product_trial_set_plan(&g,&s,15,TRIAL_PLAN_RESPONSE));CHECK(s.config.mass_g==15);return true;}
+static void conflicting_trial(unsigned capture,double delta,double variation)
+{
+    trial(capture,PRODUCT_CONFLICT);
+    s.solution.calculation_valid=true;
+    s.solution.matched_turns=96;
+    s.solution.delta_peak=delta;
+    s.solution.delta_coherence=.99;
+    s.solution.mean_noise_scale=variation;
+}
+static bool strong_conflict_offers_lighter_trial_with_same_baseline(void)
+{
+    const product_stage_summary_t baseline=s.stages[0];
+    conflicting_trial(2,.0359851,.00083746);
+    CHECK(product_trial_record(&g,&s));
+    product_trial_advice_t advice;
+    product_trial_advice(&g,&s,&advice);
+    CHECK(advice.retry_available&&advice.editable&&advice.suggested);
+    CHECK(advice.reason==TRIAL_NEXT_LIGHTER_COMPARISON&&advice.mass_g==5);
+    CHECK(!product_trial_set_plan(&g,&s,15,TRIAL_PLAN_RESPONSE));
+    CHECK(product_trial_set_plan(&g,&s,5,TRIAL_PLAN_RESPONSE));
+    CHECK(!product_trial_can_start(&g,&s,10)&&product_trial_can_start(&g,&s,5));
+    CHECK(!memcmp(&baseline,&s.stages[0],sizeof(baseline)));
+    CHECK(g.count==1&&g.attempts[0].mass_g==10&&g.attempts[0].stage.capture_id==2);
+    return true;
+}
+static bool conflict_with_small_margin_allows_retry_without_guess(void)
+{
+    conflicting_trial(2,.003,.001);
+    CHECK(product_trial_record(&g,&s));
+    product_trial_advice_t advice;
+    product_trial_advice(&g,&s,&advice);
+    CHECK(advice.retry_available&&advice.editable&&advice.suggested);
+    CHECK(advice.reason==TRIAL_NEXT_OPPOSITE&&advice.mass_g==10&&advice.angle_deg==180);
+    return true;
+}
+static bool conflict_does_not_keep_halving(void)
+{
+    CHECK(product_trial_set_plan(&g,&s,40,TRIAL_PLAN_MANUAL));
+    conflicting_trial(2,.12,.001);
+    CHECK(product_trial_record(&g,&s));
+    CHECK(product_trial_set_plan(&g,&s,20,TRIAL_PLAN_RESPONSE));
+    conflicting_trial(3,.06,.001);
+    CHECK(product_trial_record(&g,&s));
+    product_trial_advice_t advice;
+    product_trial_advice(&g,&s,&advice);
+    CHECK(advice.retry_available&&advice.reason==TRIAL_NEXT_OPPOSITE&&advice.mass_g==20);
+    return true;
+}
 static bool inconsistent_direction_has_no_mass_guess(void)
 {trial(2,PRODUCT_INCONSISTENT);s.solution.matched_turns=8;s.solution.delta_peak=.01;s.solution.delta_coherence=.2;s.solution.mean_noise_scale=.0068;
- CHECK(product_trial_record(&g,&s));product_trial_advice_t a;product_trial_advice(&g,&s,&a);CHECK(a.retry_available&&!a.suggested&&a.reason==TRIAL_NEXT_NO_PREDICTION);return true;}
+ CHECK(product_trial_record(&g,&s));product_trial_advice_t a;product_trial_advice(&g,&s,&a);CHECK(a.retry_available&&!a.suggested&&a.reason==TRIAL_NEXT_CLEAN_RECORD);return true;}
 static bool no_common_speed_has_no_mass_guess(void)
 {trial(2,PRODUCT_NO_COMMON_SPEED);CHECK(product_trial_record(&g,&s));product_trial_advice_t a;product_trial_advice(&g,&s,&a);CHECK(a.retry_available&&!a.suggested);return true;}
 static bool hard_fault_is_not_a_mass_problem(void)
@@ -60,7 +121,7 @@ static bool attempt_axis_is_retained_and_legacy_padding_is_ignored(void)
 {
     s.config.axis=0;trial(2,PRODUCT_WEAK_RESPONSE);CHECK(product_trial_record(&g,&s));
     s.config.axis=1;trial(3,PRODUCT_REASON_NONE);CHECK(product_trial_record(&g,&s));
-    CHECK(g.schema==3&&g.attempts[0].axis==0&&g.attempts[1].axis==1);
+    CHECK(g.schema==4&&g.attempts[0].axis==0&&g.attempts[1].axis==1);
     CHECK(product_trial_restore(&g,&s,sizeof(g)));
     g.attempts[0].axis=UINT32_MAX;CHECK(!product_trial_restore(&g,&s,sizeof(g)));
     g.schema=2;CHECK(product_trial_restore(&g,&s,sizeof(g)));
@@ -74,12 +135,35 @@ static bool cancel_before_capture_does_not_spend_attempt(void)
 {s.stage=PRODUCT_TRIAL;s.state=PRODUCT_CANCELLED;s.reason=PRODUCT_REASON_NONE;CHECK(!product_trial_record(&g,&s));CHECK(g.count==0&&product_trial_can_start(&g,&s,10));return true;}
 static bool explicit_manual_initial_plan(void)
 {s.config.mass_g=50;CHECK(product_trial_init(&g,&s,5,false));CHECK(s.config.mass_g==50&&g.initial_mass_g==50&&g.source==TRIAL_PLAN_MANUAL);CHECK(!product_trial_init(&g,&s,NAN,true));return true;}
+static bool automatic_opposite_does_not_relabel_old_attempt(void)
+{
+    CHECK(product_trial_plan_original(&g,&s,555)&&s.config.mass_g==5);
+    conflicting_trial(2,.03,.001);
+    s.solution.lower_rpm=540;
+    s.solution.calculation.influence.real=.01;
+    CHECK(product_trial_record(&g,&s));
+    product_trial_apply_advice(&g,&s);
+    CHECK(s.config.mass_g==5&&s.config.trial_angle_deg==180&&g.attempt_angle_deg[0]==0);
+    trial(3,PRODUCT_REASON_NONE);
+    s.solution.calculation_valid=true;
+    s.solution.lower_rpm=540;
+    s.solution.calculation.influence.real=.01;
+    CHECK(!product_trial_contradicts_previous(&g,&s));
+    s.solution.calculation.influence.real=-.01;
+    CHECK(product_trial_contradicts_previous(&g,&s));
+    CHECK(product_trial_record(&g,&s));
+    CHECK(g.attempt_angle_deg[1]==180&&g.attempt_angle_deg[0]==0);
+    return true;
+}
 int main(void)
 {
     _Static_assert(sizeof(product_snapshot_t)==752,"Do not break old saved summaries");
 #define RUN(f) do{setup();if(!f())return 1;++passed;}while(0)
-    RUN(fresh_mass_is_not_previous_50g);RUN(baseline_first);RUN(actual_confirmation_matches_plan);RUN(manual_change_keeps_baseline);
+    RUN(fresh_mass_is_not_previous_50g);RUN(first_mass_comes_from_rpm_radius_and_piece_size);RUN(baseline_first);RUN(actual_confirmation_matches_plan);RUN(manual_change_keeps_baseline);
     RUN(failed_trial_is_not_overwritten);RUN(supported_projection_is_quantized_and_bounded);RUN(inconsistent_direction_has_no_mass_guess);
+    RUN(strong_conflict_offers_lighter_trial_with_same_baseline);RUN(conflict_with_small_margin_allows_retry_without_guess);
+    RUN(conflict_does_not_keep_halving);
+    RUN(automatic_opposite_does_not_relabel_old_attempt);
     RUN(no_common_speed_has_no_mass_guess);RUN(hard_fault_is_not_a_mass_problem);RUN(success_stops_escalation);
     RUN(attempt_limit_preserves_all_sources);RUN(excessive_or_nonfinite_projection_is_withheld);RUN(stale_sidecar_rejected);
     RUN(attempt_axis_is_retained_and_legacy_padding_is_ignored);

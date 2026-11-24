@@ -27,9 +27,9 @@ typedef struct { int16_t x, y, z; } mpu6050_raw_t;
 esp_err_t mpu6050_create(mpu6050_t *dev, int sda, int scl,
                          uint8_t address, uint32_t i2c_speed_hz);
 /* Before any write, require 16 identical WHO reads at <=100 kHz.
- * Stable 0x68 selects MPU6050: 1024-byte FIFO, CONFIG.DLPF_CFG=2 (94 Hz accel).
- * MPU_POSE_DIAG_ENABLED instead selects CFG=6 (nominal 5 Hz accel/gyro)
- * for diagnostic snapshots and rejects all other identities before writes.
+ * Stable 0x68 selects MPU6050: 1024-byte FIFO and the configured bandwidth.
+ * MPU_POSE_DIAG_ENABLED adds diagnostic snapshots at that bandwidth and
+ * rejects other identities before writes.
  * Stable 0x70 selects a CANDIDATE MPU6500 register model: 512-byte FIFO,
  * ACCEL_CONFIG2.A_DLPF_CFG=2 (92 Hz in RM-MPU-6500A-00 rev. 2.1).
  * The latter is a register compatibility experiment, not chip authentication;

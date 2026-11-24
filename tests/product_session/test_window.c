@@ -43,15 +43,24 @@ int main(void)
     for(unsigned i=0;i<400;++i)if(!(turns[i].reasons[0]&~SELECT_WEAK_PHASE)){if(i<100)++high;else ++low;}
     CHECK(w.usable[0]==96&&high==48&&low==48);
     CHECK(!(turns[2].reasons[0]&SELECT_WINDOW_LIMIT)&&!(turns[99].reasons[0]&SELECT_WINDOW_LIMIT)&&!(turns[399].reasons[0]&SELECT_WINDOW_LIMIT));
+    fixture(24,500,false);
+    for(unsigned i=12;i<24;++i)turns[i].fit.rpm=turns[i].fit.rpm_previous=280;
+    product_window_select_timed(turns,24,500,&w);
+    CHECK(w.mode==WINDOW_STEADY&&w.usable[0]==10);
+    CHECK(!(turns[2].reasons[0]&SELECT_SETTLING)&&(turns[20].reasons[0]&SELECT_SETTLING));
+    product_window_select_timed(turns,24,600,&w);CHECK(!w.usable[0]);
     product_snapshot_t s={.id=42,.revision=8,.state=PRODUCT_RECORDING,.stage=PRODUCT_ORIGINAL};strcpy(s.boot_id,"0123456789abcdef");
-    product_window_t p;product_window_reset(&p,&s);CHECK(product_window_valid(&p,&s,false));
+    const product_capture_config_t capture={.mode=CAPTURE_TIMED,.vehicle_type=CAPTURE_ELECTRIC,.seconds=30};
+    product_window_t p;product_window_reset(&p,&s,capture);CHECK(product_window_valid(&p,&s,false));
+    CHECK(product_window_has_capture_settings(&p,&s));
     fixture(20,100,false);product_window_select(turns,20,&p.stages[0]);product_window_stage_t *v=&p.stages[0];
     v->capture_id=7;v->epoch=1;v->start_us=1000000;v->end_us=13000000;
     CHECK(product_window_valid(&p,&s,false)&&!product_window_valid(&p,&s,true));
     s.stages[0]=(product_stage_summary_t){.capture_id=7,.epoch=1,.start_us=1000000,.end_us=13000000};s.state=PRODUCT_COMPLETE;
     CHECK(product_window_valid(&p,&s,true));s.revision++;CHECK(!product_window_valid(&p,&s,true));product_window_bind(&p,&s);CHECK(product_window_valid(&p,&s,true));
-    s.id++;CHECK(!product_window_valid(&p,&s,true));s.id--;s.stages[0].epoch++;CHECK(!product_window_valid(&p,&s,true));s.stages[0].epoch--;
+    s.id++;CHECK(!product_window_valid(&p,&s,true)&&!product_window_has_capture_settings(&p,&s));s.id--;
+    s.stages[0].epoch++;CHECK(!product_window_valid(&p,&s,true)&&product_window_has_capture_settings(&p,&s));s.stages[0].epoch--;
     product_window_clear(&p,0);CHECK(!p.stages[0].capture_id&&product_window_valid(&p,&s,true));
-    p.schema=1;CHECK(product_window_valid(&p,&s,true)); /* released sidecar remains readable */
+    p.schema=1;CHECK(product_window_valid(&p,&s,true)&&!product_window_has_capture_settings(&p,&s)); /* released sidecar remains readable */
     printf("PASS whole-record window: settling, all-speed stratification/time coverage, no recent-tail eviction, actual extractor, legacy schema, provenance; sidecar_bytes=%zu\n",sizeof(p));return 0;
 }

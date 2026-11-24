@@ -17,13 +17,13 @@ const char *product_assessment_state_name(product_assessment_state_t state)
 static double tail_distance(const product_run_t *run,double lower)
 {
     uint64_t latest=0;for(size_t i=0;i<run->count;++i)
-        if(run->turns[i].rpm>=lower&&run->turns[i].rpm<lower+20&&run->turns[i].time_us>latest)latest=run->turns[i].time_us;
+        if(run->turns[i].rpm>=lower&&run->turns[i].rpm<lower+PRODUCT_SPEED_WIDTH&&run->turns[i].time_us>latest)latest=run->turns[i].time_us;
     return latest&&run->summary.end_us>latest?(double)(run->summary.end_us-latest):0;
 }
 static void source(product_assessment_t *q,const product_config_t *cfg,const product_run_t *a,const product_run_t *b)
 {
     memset(q,0,sizeof(*q));q->schema=1;q->policy=PRODUCT_ASSESSMENT_POLICY;q->selected_band=PRODUCT_ASSESSMENT_BANDS;
-    for(unsigned i=0;i<PRODUCT_ASSESSMENT_BANDS;++i){q->bands[i].lower_rpm=(i+1)*20;q->bands[i].reason=PRODUCT_NO_COMMON_SPEED;}
+    for(unsigned i=0;i<PRODUCT_ASSESSMENT_BANDS;++i){q->bands[i].lower_rpm=PRODUCT_MIN_RPM+i*PRODUCT_SPEED_WIDTH;q->bands[i].reason=PRODUCT_NO_COMMON_SPEED;}
     if(cfg)q->axis=cfg->axis;
     if(a){q->capture_id[0]=a->summary.capture_id;q->epoch=a->summary.epoch;q->start_us[0]=a->summary.start_us;q->end_us[0]=a->summary.end_us;}
     if(b){q->capture_id[1]=b->summary.capture_id;q->start_us[1]=b->summary.start_us;q->end_us[1]=b->summary.end_us;}
@@ -168,15 +168,16 @@ bool product_assess_runs(const product_config_t *cfg,const product_run_t *a,cons
     product_assessment_t local;product_assessment_t *q=assessment?assessment:&local;source(q,cfg,a,b);
     memset(out,0,sizeof(*out));product_solution_t failure={.reason=PRODUCT_NO_COMMON_SPEED};
     product_pairing_t pairing;
-    out->reason=product_match_runs(a,b,20,300,&pairing);
+    out->reason=product_match_runs(a,b,PRODUCT_MIN_RPM,PRODUCT_TIMED_MAX_RPM_EXCLUSIVE,&pairing);
     if(out->reason!=PRODUCT_REASON_NONE)return false;
+    const unsigned first_band=product_band_origin(a);
     double best_score=-1,best_response=-1,best_tail=INFINITY;unsigned failed_pairs=0;
     for(unsigned i=0;i<PRODUCT_ASSESSMENT_BANDS;++i){
         product_solution_t candidate;product_band_detail_t detail;
-        const double lower=(i+1)*20;
+        const unsigned lower=first_band+i*PRODUCT_SPEED_WIDTH;
         const bool ok=product_evaluate_matched_band(cfg,a,b,&pairing,lower,&candidate,&detail);
         product_assessment_band_t *row=&q->bands[i];
-        *row=(product_assessment_band_t){.lower_rpm=(i+1)*20,.pairs=candidate.matched_turns,.available=ok,
+        *row=(product_assessment_band_t){.lower_rpm=lower,.pairs=candidate.matched_turns,.available=ok,
             .reason=candidate.reason,.split_available=detail.split_available,.split_valid=detail.split_valid,
             .mass_g=candidate.calculation.mass_g,.angle_deg=candidate.calculation.angle_deg,
             .score=detail.score,.response_snr=candidate.calculation.response_snr,
@@ -312,8 +313,11 @@ bool product_assessment_valid(const product_assessment_t *q,const product_snapsh
     for(unsigned i=0;i<2;++i)if(q->capture_id[i]!=s->stages[i].capture_id||q->epoch!=s->stages[i].epoch||
         q->start_us[i]!=s->stages[i].start_us||q->end_us[i]!=s->stages[i].end_us)return false;
     if(!q->epoch||q->capture_id[0]==q->capture_id[1]||q->end_us[0]>q->start_us[1])return false;
+    const unsigned first_band=q->bands[0].lower_rpm;
+    if(first_band<PRODUCT_MIN_RPM||first_band>PRODUCT_TIMED_MAX_RPM_EXCLUSIVE-PRODUCT_ASSESSMENT_BANDS*PRODUCT_SPEED_WIDTH||
+       first_band%PRODUCT_SPEED_WIDTH||(q->policy<5&&first_band!=PRODUCT_MIN_RPM))return false;
     unsigned valid=0;for(unsigned i=0;i<PRODUCT_ASSESSMENT_BANDS;++i){const product_assessment_band_t *b=&q->bands[i];
-        if(b->lower_rpm!=(i+1)*20||b->pairs>PRODUCT_MAX_TURNS||b->available>1||b->reason>PRODUCT_CAPTURE_LIMIT||b->split_available>1||b->split_valid>1||
+        if(b->lower_rpm!=first_band+i*PRODUCT_SPEED_WIDTH||b->pairs>PRODUCT_MAX_TURNS||b->available>1||b->reason>PRODUCT_CAPTURE_LIMIT||b->split_available>1||b->split_valid>1||
             !finite_nonnegative(b->mass_g)||!finite_nonnegative(b->angle_deg)||b->angle_deg>=360||!finite_nonnegative(b->score)||b->score>1||
             !finite_nonnegative(b->response_snr)||!finite_nonnegative(b->split_relative_difference)||!finite_nonnegative(b->split_phase_difference)||b->split_phase_difference>180.00001||
             !isfinite(b->influence_real)||!isfinite(b->influence_imag)||!isfinite(b->original_real)||!isfinite(b->original_imag))return false;

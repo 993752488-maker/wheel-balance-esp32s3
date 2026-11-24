@@ -294,6 +294,19 @@ static bool changed_context_cannot_rebind_old_review(void)
     product_snapshot_t s={.schema=1,.id=55,.revision=3,.config=cfg};strcpy(s.boot_id,"testboot");product_assessment_reset(&review,&s);
     CHECK(product_assessment_valid(&review,&s));s.id=56;product_assessment_bind(&review,&s);CHECK(!product_assessment_valid(&review,&s));return true;
 }
+static bool saved_assessment_uses_measured_high_speed_band(void)
+{
+    band(&a[0],&b[0],510,12,4,120,1,-.5);
+    CHECK(product_assess_runs(&cfg,&a[0],&b[0],&result,&review));
+    CHECK(result.engineering_available&&result.lower_rpm==500&&result.upper_rpm==520);
+    product_snapshot_t s={.schema=1,.id=55,.revision=3,.config=cfg,.solution=result};
+    strcpy(s.boot_id,"0123456789abcdef");
+    s.stages[0]=a[0].summary;s.stages[1]=b[0].summary;
+    product_assessment_bind(&review,&s);
+    CHECK(product_assessment_valid(&review,&s));
+    review.bands[0].lower_rpm=20;CHECK(!product_assessment_valid(&review,&s));
+    return true;
+}
 int main(void)
 {
 #define RUN(f) do{setup();if(!f())return 1;++passed;}while(0)
@@ -306,5 +319,6 @@ int main(void)
     RUN(high_gain_cannot_dominate_and_band_tie_cannot_direct);RUN(incompatible_axes_are_visible_not_blended);RUN(unselected_axis_fault_still_blocks_everything);RUN(mismatched_axis_capture_is_not_reused);
     RUN(internally_conflicted_axis_cannot_break_a_tie);RUN(near_zero_original_stays_zero_across_bands);
     RUN(sidecar_is_bound_to_exact_source_and_revision);RUN(changed_context_cannot_rebind_old_review);
+    RUN(saved_assessment_uses_measured_high_speed_band);
     printf("PASS estimation_assessment cases=%u snapshot_bytes=%zu assessment_bytes=%zu synthetic_only=1\n",passed,sizeof(product_snapshot_t),sizeof(product_assessment_t));return 0;
 }

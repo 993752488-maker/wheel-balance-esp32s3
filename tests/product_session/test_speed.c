@@ -31,8 +31,12 @@ int main(void)
     run.turns[0].real=NAN;CHECK(!product_speed_set(&p,1,&run,false,2200));CHECK(p.stages[1].mode==SPEED_INVALID&&p.stages[1].used_turns==0);
     CHECK(product_speed_valid(&p,&s,true));CHECK(!memcmp(&original,&p.stages[0],sizeof(original)));
     product_speed_clear(&p,1);CHECK(p.stages[1].mode==SPEED_EMPTY);product_speed_reset(&p,&s);CHECK(p.stages[0].used_turns==0);
-    run.turns[0].real=1;run.turns[0].rpm=20;run.turns[1].rpm=39.9;run.turns[2].rpm=40;run.turns[3].rpm=300;
+    run.turns[0].real=1;run.turns[0].rpm=20;run.turns[1].rpm=39.9;run.turns[2].rpm=40;run.turns[3].rpm=640;
     CHECK(product_speed_set(&p,0,&run,false,2300));CHECK(p.stages[0].bins[0].count==2&&p.stages[0].bins[1].count==1&&p.stages[0].outside_turns==1);
     run.summary.integrity_valid=false;CHECK(!product_speed_set(&p,0,&run,false,2400));CHECK(p.stages[0].used_turns==0);
+    run.summary.integrity_valid=true;s.stages[0]=run.summary;
+    for(unsigned i=0;i<4;++i)run.turns[i].rpm=500+i;
+    CHECK(product_speed_set(&p,0,&run,false,2500)&&product_speed_valid(&p,&s,true));
+    CHECK(p.stages[0].bins[13].count==4&&product_speed_lower_rpm(&p.stages[0],13)==500);
     CHECK(sizeof(product_speed_t)<=1200);printf("PASS speed profile: RMS, phase cancellation, holes, boundaries, frozen baseline, preview, revision/boot/axis/capture isolation, nonfinite/fault rejection; bytes=%zu\n",sizeof(product_speed_t));return 0;
 }

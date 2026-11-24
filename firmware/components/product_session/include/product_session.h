@@ -7,7 +7,8 @@
 #include "product_assessment.h"
 #include "esp_err.h"
 typedef enum { PRODUCT_NEW,PRODUCT_START_ORIGINAL,PRODUCT_START_TRIAL,PRODUCT_START_RETEST,
-    PRODUCT_CANCEL,PRODUCT_DEMO,PRODUCT_DEMO_TRIAL,PRODUCT_DEMO_RETEST,PRODUCT_TRIAL_PLAN,PRODUCT_FINISH } product_command_t;
+    PRODUCT_CANCEL,PRODUCT_DEMO,PRODUCT_DEMO_TRIAL,PRODUCT_DEMO_RETEST,PRODUCT_TRIAL_PLAN,PRODUCT_FINISH,
+    PRODUCT_SET_CAPTURE } product_command_t;
 typedef struct { product_command_t action;uint32_t id,revision;product_config_t config;bool trial_removed;
     bool guided,trial_installed,manual_axis;double piece_mass_g,confirmed_mass_g;product_trial_source_t plan_source;
     product_retest_condition_t retest_condition;

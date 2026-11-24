@@ -7,11 +7,11 @@ static bool score_axis(const product_run_t *run,double *score)
     if(!run->summary.captured||!run->summary.integrity_valid||!run->summary.epoch||run->count<3||run->count>PRODUCT_MAX_TURNS)return false;
     for(size_t i=0;i<run->count;++i)if(!isfinite(run->turns[i].real)||!isfinite(run->turns[i].imag)||
         !isfinite(run->turns[i].rpm)||run->turns[i].rpm<=0)return false;
-    double scores[14];unsigned count=0;
-    for(unsigned band=1;band<15;++band){
+    double scores[PRODUCT_SPEED_BAND_COUNT];unsigned count=0;
+    for(unsigned lower=PRODUCT_MIN_RPM;lower<PRODUCT_TIMED_MAX_RPM_EXCLUSIVE;lower+=PRODUCT_SPEED_WIDTH){
         double re=0,im=0,magnitude=0;unsigned n=0;
         for(size_t i=0;i<run->count;++i){const product_turn_t *t=&run->turns[i];
-            if(t->rpm<band*20||t->rpm>=(band+1)*20)continue;
+            if(t->rpm<lower||t->rpm>=lower+PRODUCT_SPEED_WIDTH)continue;
             re+=t->real;im+=t->imag;magnitude+=hypot(t->real,t->imag);++n;}
         if(n<3)continue;
         const double value=magnitude>0?fmin(1,hypot(re,im)/magnitude):0;

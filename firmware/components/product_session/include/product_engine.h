@@ -5,6 +5,12 @@
 
 #define PRODUCT_MAX_TURNS 96U
 #define PRODUCT_HISTORY 3U
+#define PRODUCT_MIN_RPM 20U
+#define PRODUCT_COAST_MAX_RPM_EXCLUSIVE 300U
+#define PRODUCT_TIMED_MAX_RPM_EXCLUSIVE 640U
+#define PRODUCT_SPEED_WIDTH 20U
+#define PRODUCT_SPEED_BAND_COUNT ((PRODUCT_TIMED_MAX_RPM_EXCLUSIVE-PRODUCT_MIN_RPM)/PRODUCT_SPEED_WIDTH)
+#define PRODUCT_SAVED_BANDS ((PRODUCT_COAST_MAX_RPM_EXCLUSIVE-PRODUCT_MIN_RPM)/PRODUCT_SPEED_WIDTH)
 typedef enum { PRODUCT_ORIGINAL,PRODUCT_TRIAL,PRODUCT_RETEST } product_stage_t;
 typedef enum { PRODUCT_IDLE,PRODUCT_ARMED,PRODUCT_RECORDING,PRODUCT_PROCESSING,
     PRODUCT_COMPLETE,PRODUCT_NO_RESULT,PRODUCT_CANCELLED,PRODUCT_TIMEOUT } product_state_t;
@@ -33,6 +39,21 @@ typedef struct {
     size_t count;
     product_turn_t turns[PRODUCT_MAX_TURNS];
 } product_run_t;
+/* Retain the released 14-bin storage layout. A timed run is selected near
+ * one operating speed, so a shifted set of bands covers that run. */
+static inline unsigned product_band_origin(const product_run_t *run)
+{
+    unsigned top=PRODUCT_MIN_RPM;
+    for(size_t i=0;i<run->count;++i){
+        const double rpm=run->turns[i].rpm;
+        if(rpm>=PRODUCT_MIN_RPM&&rpm<PRODUCT_TIMED_MAX_RPM_EXCLUSIVE){
+            const unsigned lower=(unsigned)rpm/PRODUCT_SPEED_WIDTH*PRODUCT_SPEED_WIDTH;
+            if(lower>top)top=lower;
+        }
+    }
+    return top<PRODUCT_COAST_MAX_RPM_EXCLUSIVE?PRODUCT_MIN_RPM:
+        top-(PRODUCT_SAVED_BANDS-1)*PRODUCT_SPEED_WIDTH;
+}
 typedef struct {
     bool calculation_valid,engineering_available,accuracy_validated;
     unsigned matched_turns;

@@ -32,7 +32,7 @@
 </section>
 <div class="product" id="productApp">
 <section class="card product-card session-focus" id="pFlowCard" aria-label="自动测量会话">
-  <div class="product-title"><h2 id="pVehicleName">本次测量</h2><span class="product-tag" id="pSource" hidden></span></div>
+  <div class="product-title"><h2 id="pVehicleName">本次测量</h2><span class="product-tag" id="pSource" hidden></span><span class="product-tag" id="pCaptureModeHint" hidden></span></div>
   <ol class="product-stepper" aria-label="测量进度">
     <li id="pStep0"><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-wheel"/></svg><svg class="icon step-check" aria-hidden="true"><use href="#i-check"/></svg></span><span>原轮</span></li>
     <li id="pStep1"><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-weight"/></svg><svg class="icon step-check" aria-hidden="true"><use href="#i-check"/></svg></span><span>试重</span></li>
@@ -43,7 +43,7 @@
   <p class="product-note product-record-label" id="pRecordLabel"></p>
   <div id="pVehiclePicker" class="product-vehicle-picker">
     <svg class="icon" aria-hidden="true"><use href="#i-wheel"/></svg>
-    <label><span class="sr-only">测量类型</span><select id="pVehicleType"><option value="bicycle">自行车 · 手拨滑行</option><option value="electric">电动车／电摩 · 匀速</option><option value="other">其它 · 自定义</option></select><small id="pCaptureModeHint">等车轮转完</small></label>
+    <label><span class="sr-only">测量类型</span><select id="pVehicleType"><option value="bicycle">自行车</option><option value="electric">电动车／电摩</option><option value="other">其它 · 自定义</option></select></label>
   </div>
   <progress id="pProgress" max="100" value="0" hidden aria-label="采集进度"></progress>
   <p id="pTrialPlan" class="product-plan" hidden></p>
@@ -63,8 +63,7 @@
       </div>
     </div>
     <p id="pTrialTaskReplace" class="product-note"></p>
-    <p id="pTrialAdvice" class="product-note"></p><button id="pUseTrialAdvice" type="button" hidden>采用下一组建议</button>
-    <details><summary>修改试重总量</summary><div class="product-trial-edit"><label>本轮新增（g）<input id="pTrialActualMass" type="number" min="0.1" max="1000" step="0.1"></label><button id="pApplyTrialMass" type="button">确认总量</button></div></details>
+    <p id="pTrialAdvice" class="product-note"></p>
     <label class="product-retest-check"><input id="pTrialInstalled" type="checkbox"><span id="pTrialInstalledText">已按本次总量贴牢，车轮已停稳</span></label>
   </section>
   <label id="pRetestCheck" class="product-retest-check" hidden><input id="pTrialRemoved" type="checkbox"><span id="pRetestCheckText">已移除试重，并按图贴好校正块</span></label>
@@ -74,26 +73,23 @@
   </label>
   <div id="pCaptureFlow" class="capture-flow" hidden>
     <div class="capture-stages"><span id="pCaptureSettle">整段记录</span><span id="pCaptureCollect">停转确认</span><span id="pCaptureFinish">统一分析</span></div>
-    <div class="capture-detail"><b id="pCaptureCount">等待完整圈</b><small id="pCaptureNote">匀速和自然滑行均可</small></div>
+    <div class="capture-detail"><b id="pCaptureCount"></b></div>
   </div>
   <button class="product-main-button" id="pPrimary" type="button" disabled>开始原轮测量</button>
-  <div class="product-actions"><button id="pCancel" type="button" hidden>取消本段</button><button id="pFinish" type="button" hidden>手动结束并分析</button><button id="pNew" type="button">新建测量</button><button id="pBack" type="button" hidden>返回当前会话</button></div>
+  <div class="product-actions"><button id="pCancel" type="button" hidden>取消本段</button><button id="pFinish" type="button" hidden>手动结束并分析</button><button id="pNew" type="button">新建测量</button><button id="pExportTrial" type="button" hidden>导出报告</button><button id="pBack" type="button" hidden>返回当前会话</button></div>
   <p id="pMessage" class="product-error" role="status"></p>
   <details id="pSetup"><summary><svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg>测量设置</summary>
     <div class="product-form">
       <label class="full">车辆／车轮备注<input id="pVehicle" maxlength="18" value="自行车 · 后轮"></label>
       <label>贴块半径（mm）<input id="pRadius" type="number" min="1" max="2000" value="270"></label>
-      <label>每片配重质量（g）<input id="pPiece" type="number" min="0.1" max="500" step="0.1" value="5"></label>
+      <label>每块配重（g）<input id="pPiece" type="number" min="0.1" max="40" step="0.1" value="5"></label>
       <label class="full">车轮转动方向（保持同一观察侧）<select id="pDirection"><option value="cw">顺时针转动</option><option value="ccw">逆时针转动</option></select></label>
     </div><small>贴块半径从轮轴中心量到配重中心。</small><small id="pRadiusNote" class="product-radius-note"></small>
     <details id="pAdvancedSettings"><summary>高级设置</summary><div class="product-form">
-      <label class="full">采集方式<select id="pCaptureMode"><option value="coast">自然滑行 · 等转完</option><option value="timed">匀速 · 固定时长</option></select></label>
-      <label>定时记录（秒）<input id="pCaptureSeconds" type="number" min="10" max="60" step="1" value="30"></label>
+      <label class="full">采集方式<select id="pCaptureMode"><option value="coast">自然滑行 · 等转完</option><option value="timed">匀速 · 自动计时</option></select><small>选「其它 · 自定义」可更改。</small></label>
       <label class="full">测量通道<select id="pAxis"><option value="auto" selected>自动选轴（一次采集三轴）</option><option value="0">手动：X轴</option><option value="1">手动：Y轴</option><option value="2">手动：Z轴</option></select></label>
       <label>试重角度（°，白标为0°）<input id="pTrialAngle" type="number" min="0" max="359.9" step="0.1" value="0"></label>
       <label>校正半径（mm）<input id="pCorrectionRadius" type="number" min="1" max="2000" value="270"></label>
-      <label>试重计划<select id="pTrialMode"><option value="guided">两片起步探测</option><option value="manual">手动指定试重</option></select></label>
-      <label id="pManualMassField" hidden>手动试重总质量（g）<input id="pMass" type="number" min="0.1" max="1000" step="0.1" value="10"></label>
     </div><div class="product-actions"><button id="pResetAdvanced" type="button">恢复普通自动设置</button></div></details>
     <div class="product-actions"><button id="pSaveConfig" type="button">应用参数并新建</button></div>
   </details>
@@ -167,7 +163,7 @@
       <div class="wave-footer"><span class="state-line" id="waveState"><i></i><span id="waveStateText">等待输入</span></span><span>FIFO 读出时间</span></div><p class="gap-note" id="gapNote" hidden></p>
     </section>
 </div></details>
-<footer class="page-footer"><span>WheelBalance · <b id="firmwareValue">—</b></span><span id="updateAge">等待响应</span></footer><details class="help"><summary>设备信息</summary><p>Wi-Fi 使用固件构建时配置的热点<br>网址 192.168.4.1<br><span id="uptimeValue">运行 —</span></p><p>单平面工程原型，效果以本次复测为准。更换车轮或移动传感器后请新建测量。</p></details>
+<footer class="page-footer"><span>WheelBalance-S3 · <b id="firmwareValue">—</b></span><span id="updateAge">等待响应</span></footer><details class="help"><summary>设备信息</summary><p>Wi-Fi WheelBalance-S3<br>密码 wheelbalance-demo<br>网址 192.168.4.1<br><span id="uptimeValue">运行 —</span></p><p>单平面工程原型，效果以本次复测为准。更换车轮或移动传感器后请新建测量。</p></details>
 </main><div class="toast" id="toast" role="status" hidden></div>
 <script>
 (() => {
@@ -268,7 +264,7 @@
     let banner='',kind='status-banner';
     if(offline)banner='离线预览';
     else if(replayDone)banner='回放结束';
-    else if(!fresh){if(!waiting){banner=d?'等待设备响应':'请连接设备热点';kind+=' bad';}}
+    else if(!fresh){if(!waiting){banner=d?'等待设备响应':'请连接WheelBalance-S3';kind+=' bad';}}
     else if(source!=='live_device'){banner=source==='replay'?'历史波形':'测试数据 · 非实测';kind+=' replay';}
     else if(!d.imu.online){banner='传感器离线，请检查供电与接线。';kind+=' bad';}
     $('statusBanner').hidden=!banner;$('statusBanner').className=kind;setText('bannerText',banner);
@@ -385,7 +381,7 @@
   renderStatus();scheduleDraw();poll();
 })();
 </script>
-<script src="/speed.js?v=0.6.7"></script>
-<script src="/product.js?v=0.6.7"></script>
+<script src="/speed.js?v=0.6.9"></script>
+<script src="/product.js?v=0.6.12"></script>
 </body>
 </html>

@@ -20,17 +20,23 @@ static bool product_command(const char *line)
     static product_snapshot_t status;
     static product_trial_guide_t guide;
     static product_retest_log_t retests;
+    static product_window_t window;
     if(strncmp(line,"PRODUCT_",8))return false;
-    product_session_get_full_view(&status,&guide,&retests);
+    product_session_get_product_view(&status,&guide,&retests,NULL,&window);
+    const bool capture_known=product_window_has_capture_settings(&window,&status);
     if(!strcmp(line,"PRODUCT_STATUS")) {
-        serial_console_printf("PRODUCT_SESSION id=%" PRIu32 " revision=%" PRIu32 " state=%s stage=%u source=%s historical=%d storage_ok=%d original=%d trial=%d retest=%d calculation_valid=%d engineering_available=%d mass_g=%.6f angle_deg=%.6f improvement_available=%d improvement_pct=%.6f history=%u reason=%s accuracy_validated=0 firmware=%s axis_mode=%s axis=%u axis_resolved=%d trial_mass_g=%.3f trial_radius_mm=%.1f trial_angle_deg=%.1f correction_radius_mm=%.1f trial_attempts=%" PRIu32 "\n",
+        const char *vehicles[]={"bicycle","electric","other"};
+        serial_console_printf("PRODUCT_SESSION id=%" PRIu32 " revision=%" PRIu32 " state=%s stage=%u source=%s historical=%d storage_ok=%d original=%d trial=%d retest=%d calculation_valid=%d engineering_available=%d mass_g=%.6f angle_deg=%.6f improvement_available=%d improvement_pct=%.6f history=%u reason=%s accuracy_validated=0 firmware=%s axis_mode=%s axis=%u axis_resolved=%d trial_mass_g=%.3f trial_radius_mm=%.1f trial_angle_deg=%.1f correction_radius_mm=%.1f trial_attempts=%" PRIu32 " capture_mode=%s vehicle_type=%s capture_seconds=%u\n",
             status.id,status.revision,product_state_name(status.state),(unsigned)status.stage,status.simulated?"synthetic":"device",
             status.historical,status.storage_ok,status.stages[0].captured,status.stages[1].captured,status.stages[2].captured,
             status.solution.calculation_valid,status.solution.engineering_available,status.solution.calculation.mass_g,
             status.solution.calculation.angle_deg,status.comparison.available,status.comparison.improvement_percent,
             (unsigned)product_session_history(NULL,PRODUCT_HISTORY),product_reason_name(status.reason),status.firmware,
             guide.automatic_axis?"auto":"manual",status.config.axis,guide.axis_resolved,status.config.mass_g,
-            status.config.trial_radius_mm,status.config.trial_angle_deg,status.config.correction_radius_mm,guide.count);return true;
+            status.config.trial_radius_mm,status.config.trial_angle_deg,status.config.correction_radius_mm,guide.count,
+            capture_known?(window.capture.mode==CAPTURE_TIMED?"timed":"coast"):"unknown",
+            capture_known?vehicles[window.capture.vehicle_type]:"unknown",
+            capture_known?(unsigned)window.capture.seconds:0U);return true;
     }
     if(!strcmp(line,"PRODUCT_RETESTS")){
         const bool valid=product_retest_valid(&retests,&status);
@@ -50,6 +56,16 @@ static bool product_command(const char *line)
     else if(!strcmp(line,"PRODUCT_DEMO_TRIAL"))r.action=PRODUCT_DEMO_TRIAL;
     else if(!strcmp(line,"PRODUCT_DEMO_RETEST"))r.action=PRODUCT_DEMO_RETEST;
     else if(!strcmp(line,"PRODUCT_NEW")){r.action=PRODUCT_NEW;product_session_get_real_config(&r.config);}
+    else if(!strcmp(line,"PRODUCT_ARM_ORIGINAL")){
+        if(status.state!=PRODUCT_IDLE||status.simulated)return true;
+        r.action=PRODUCT_START_ORIGINAL;
+    }
+    else if(!strcmp(line,"PRODUCT_MODE_ELECTRIC")||!strcmp(line,"PRODUCT_MODE_BICYCLE")){
+        if(status.state!=PRODUCT_IDLE||status.simulated)return true;
+        r.action=PRODUCT_SET_CAPTURE;
+        r.capture=capture_known?window.capture:product_capture_default();
+        r.capture.vehicle_type=!strcmp(line,"PRODUCT_MODE_ELECTRIC")?CAPTURE_ELECTRIC:CAPTURE_BICYCLE;
+    }
     else return true;
     const bool ok=product_session_submit(&r);serial_console_printf("PRODUCT_COMMAND command=%s queued=%d\n",line,ok);return true;
 }
